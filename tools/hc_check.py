@@ -56,6 +56,25 @@ def read_frame(sock):
             return payload
 
 
+def is_dishwasher(dev):
+    return any(str(f.get("name", "")).startswith("Dishcare.Dishwasher.")
+               for f in dev.get("features", {}).values())
+
+
+def pick_device(devices, host):
+    """Прибор с этим IP; если host в devices.json другой (например, имя) — единственная посудомойка."""
+    for d in devices:
+        if d.get("host") == host:
+            return d
+    if len(devices) == 1:
+        return devices[0]
+    dish = [d for d in devices if is_dishwasher(d)]
+    if len(dish) == 1:
+        return dish[0]
+    sys.exit(f"В devices.json нет прибора с host={host!r}. Приборы: "
+             + ", ".join(f"{d.get('name')} ({d.get('host')})" for d in devices))
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit("Использование: py hc_check.py <IP посудомойки> [devices.json]")
@@ -67,7 +86,9 @@ def main():
                  f"HAS_PSK={getattr(ssl, 'HAS_PSK', None)}")
 
     with open(devfile, encoding="utf-8") as f:
-        dev = json.load(f)[0]
+        data = json.load(f)
+    dev = pick_device(data if isinstance(data, list) else [data], host)
+    print(f"Прибор из devices.json: {dev.get('name')} (host {dev.get('host')})", flush=True)
     if "iv" in dev:
         sys.exit("Этот прибор работает по AES (порт 80), скрипт проверяет только TLS-приборы.")
     psk = b64url(dev["key"])
