@@ -1,0 +1,8 @@
+# ключи доступа к машине — никогда не коммитить
+devices.json
+*devices*.json
+!examples/**
+# результат генератора
+out/
+__pycache__/
+*.pyc

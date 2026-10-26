@@ -1,0 +1,2 @@
+hcpy 590f1e71a75c91b36ea77eab7b5698c42ace4451 (github.com/hcpy2-0/hcpy)
++ wb7-changes.patch: pycryptodome не нужен для TLS-приборов

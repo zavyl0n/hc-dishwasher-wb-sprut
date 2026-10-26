@@ -1,0 +1,972 @@
+{
+  "name": "Посудомоечная машина",
+  "manufacturer": "Bosch",
+  "model": "SMV4HVX31E (hcpy)",
+  "modelIds": [
+    "/devices/(dishwasher)/controls/run/meta/type"
+  ],
+  "services": [
+    {
+      "name": "Мойка",
+      "type": "Valve",
+      "characteristics": [
+        {
+          "type": "Active",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/run",
+              "topicSet": "/devices/(1)/controls/run/on"
+            }
+          ]
+        },
+        {
+          "type": "InUse",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/running"
+            }
+          ]
+        },
+        {
+          "type": "RemainingDuration",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/remaining_sec"
+            }
+          ],
+          "maxValue": 86400
+        },
+        {
+          "type": "StatusFault",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/alarm"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Питание",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/power",
+              "topicSet": "/devices/(1)/controls/power/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Программа: Эко 50°",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/prog_eco50",
+              "topicSet": "/devices/(1)/controls/prog_eco50/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Программа: Авто 45–65°",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/prog_auto2",
+              "topicSet": "/devices/(1)/controls/prog_auto2/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Программа: Интенсивная 70°",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/prog_intensiv70",
+              "topicSet": "/devices/(1)/controls/prog_intensiv70/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Программа: Быстрая 65°",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/prog_quick65",
+              "topicSet": "/devices/(1)/controls/prog_quick65/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Программа: Тихая (ночная)",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/prog_nightwash",
+              "topicSet": "/devices/(1)/controls/prog_nightwash/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Программа: Предварительное ополаскивание",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/prog_prerinse",
+              "topicSet": "/devices/(1)/controls/prog_prerinse/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Программа: Уход за машиной",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/prog_machinecare",
+              "topicSet": "/devices/(1)/controls/prog_machinecare/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Программа: Избранное",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/prog_001",
+              "topicSet": "/devices/(1)/controls/prog_001/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Опция: VarioSpeed+",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/opt_variospeed",
+              "topicSet": "/devices/(1)/controls/opt_variospeed/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Опция: половинная загрузка",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/opt_halfload",
+              "topicSet": "/devices/(1)/controls/opt_halfload/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Опция: Extra Dry",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/opt_extradry",
+              "topicSet": "/devices/(1)/controls/opt_extradry/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Опция: тихий режим",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/opt_silence",
+              "topicSet": "/devices/(1)/controls/opt_silence/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Отложить старт, ч",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/delay_h",
+              "topicSet": "/devices/(1)/controls/delay_h/on"
+            }
+          ],
+          "minValue": 0,
+          "maxValue": 24,
+          "minStep": 1
+        }
+      ]
+    },
+    {
+      "name": "Завершить к (ЧЧ:ММ)",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/finish_at",
+              "topicSet": "/devices/(1)/controls/finish_at/on"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Состояние",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/state"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Выполняется",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/active_program"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Фаза",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/phase"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Прогресс, %",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/progress"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Осталось",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/remaining"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Старт через",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/start_in"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Окончание",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/end_time"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Дверь",
+      "type": "ContactSensor",
+      "characteristics": [
+        {
+          "type": "ContactSensorState",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/door_open"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Мойка завершена",
+      "type": "OccupancySensor",
+      "characteristics": [
+        {
+          "type": "OccupancyDetected",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/finished"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AquaStop",
+      "type": "LeakSensor",
+      "characteristics": [
+        {
+          "type": "LeakDetected",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/aquastop"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Аварии",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/alarm_text"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Соль",
+      "type": "FilterMaintenance",
+      "characteristics": [
+        {
+          "type": "FilterChangeIndication",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/salt_level",
+              "map": {
+                "FILTER_OK": "100",
+                "CHANGE_FILTER": "0;10"
+              }
+            }
+          ]
+        },
+        {
+          "type": "FilterLifeLevel",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/salt_level"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Ополаскиватель",
+      "type": "FilterMaintenance",
+      "characteristics": [
+        {
+          "type": "FilterChangeIndication",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/rinse_level",
+              "map": {
+                "FILTER_OK": "100",
+                "CHANGE_FILTER": "0;10"
+              }
+            }
+          ]
+        },
+        {
+          "type": "FilterLifeLevel",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/rinse_level"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Уход за машиной",
+      "type": "FilterMaintenance",
+      "characteristics": [
+        {
+          "type": "FilterChangeIndication",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/care_needed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Фильтр",
+      "type": "FilterMaintenance",
+      "characteristics": [
+        {
+          "type": "FilterChangeIndication",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/filter_check"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Циклов до ухода за машиной",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/care_runs"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Последнее событие",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/last_message"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Последняя мойка",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/finished_at"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Связь с машиной",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Boolean",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/online"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Удалённый старт разрешён",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Boolean",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/remote_start"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Настройка: InfoLight (луч на полу)",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/set_infolight",
+              "topicSet": "/devices/(1)/controls/set_infolight/on"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Настройка: Extra Dry всегда",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/set_extradry",
+              "topicSet": "/devices/(1)/controls/set_extradry/on"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Настройка: громкость сигнала (0–3)",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/set_sound",
+              "topicSet": "/devices/(1)/controls/set_sound/on"
+            }
+          ],
+          "minValue": 0,
+          "maxValue": 3,
+          "minStep": 1
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Настройка: дозировка ополаскивателя (0–6)",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/set_rinseaid",
+              "topicSet": "/devices/(1)/controls/set_rinseaid/on"
+            }
+          ],
+          "minValue": 0,
+          "maxValue": 6,
+          "minStep": 1
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Настройка: жёсткость воды (0–7)",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/set_hardness",
+              "topicSet": "/devices/(1)/controls/set_hardness/on"
+            }
+          ],
+          "minValue": 0,
+          "maxValue": 7,
+          "minStep": 1
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Настройка: горячая вода",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/set_hotwater",
+              "topicSet": "/devices/(1)/controls/set_hotwater/on"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Настройка: датчик загрязнения (0–2)",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/set_turbidity",
+              "topicSet": "/devices/(1)/controls/set_turbidity/on"
+            }
+          ],
+          "minValue": 0,
+          "maxValue": 2,
+          "minStep": 1
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Настройка: Эко при включении",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/set_ecodefault",
+              "topicSet": "/devices/(1)/controls/set_ecodefault/on"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Настройка: длительность тихого режима, мин",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/set_silencetime",
+              "topicSet": "/devices/(1)/controls/set_silencetime/on"
+            }
+          ],
+          "minValue": 1,
+          "maxValue": 30,
+          "minStep": 1
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Настройка: удалённое управление (0–2)",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/set_remotelevel",
+              "topicSet": "/devices/(1)/controls/set_remotelevel/on"
+            }
+          ],
+          "minValue": 0,
+          "maxValue": 2,
+          "minStep": 1
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Настройка: связь с облаком Home Connect",
+      "type": "Switch",
+      "characteristics": [
+        {
+          "type": "On",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/set_cloud",
+              "topicSet": "/devices/(1)/controls/set_cloud/on"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Как завершилась последняя программа",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/end_trigger"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Осталось, мин",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/remaining_min"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Тихий режим: осталось, мин",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/silence_left"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Прогноз энергии, %",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/energy_forecast"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Прогноз воды, %",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/water_forecast"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Всего запусков",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/cycles"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Wi-Fi, dBm",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/rssi"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Прошивка",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_String",
+          "link": [
+            {
+              "type": "String",
+              "topicGet": "/devices/(1)/controls/fw"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
+      "name": "Доступно обновление ПО",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Boolean",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/fw_update"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    }
+  ]
+}

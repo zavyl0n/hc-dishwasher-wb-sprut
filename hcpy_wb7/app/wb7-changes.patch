@@ -1,0 +1,46 @@
+diff --git a/HCDevice.py b/HCDevice.py
+index 613f6ce..a33d866 100755
+--- a/HCDevice.py
++++ b/HCDevice.py
+@@ -46,8 +46,7 @@ import sys
+ import threading
+ import traceback
+ from base64 import urlsafe_b64encode as base64url_encode
+-
+-from Crypto.Random import get_random_bytes
++from os import urandom as get_random_bytes  # stdlib CSPRNG; no pycryptodome needed
+ 
+ from utils import now
+ 
+diff --git a/HCSocket.py b/HCSocket.py
+index bee8e25..779264e 100755
+--- a/HCSocket.py
++++ b/HCSocket.py
+@@ -10,9 +10,15 @@ import threading
+ from base64 import urlsafe_b64decode as base64url
+ 
+ import websocket
+-from Crypto.Cipher import AES
+-from Crypto.Hash import HMAC, SHA256
+-from Crypto.Random import get_random_bytes
++
++# pycryptodome is only needed for AES (port 80) appliances; TLS-PSK appliances
++# work without it, which avoids compiling it on small ARM controllers.
++try:
++    from Crypto.Cipher import AES
++    from Crypto.Hash import HMAC, SHA256
++    from Crypto.Random import get_random_bytes
++except ImportError:
++    AES = HMAC = SHA256 = get_random_bytes = None
+ 
+ from utils import now
+ 
+@@ -61,6 +67,8 @@ class HCSocket:
+ 
+         if iv64:
+             # an HTTP self-encrypted socket
++            if AES is None:
++                raise ImportError("pycryptodome is required for AES (port 80) appliances")
+             self.http = True
+             self.iv = base64url(iv64 + "===")
+             self.enckey = hmac(self.psk, b"ENC")
