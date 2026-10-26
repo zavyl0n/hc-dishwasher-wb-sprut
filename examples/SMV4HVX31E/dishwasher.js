@@ -15,7 +15,8 @@ var CFG = {
   base: "homeconnect/dishwasher",    // префикс hcpy + поле "name" из devices.json (make_kit.py подставит сам)
   powerOnDelayMs: 5000,              // пауза после включения питания перед командой
   resyncMs: 15000,                   // через сколько вернуть контрол к реальному значению, если машина не приняла команду
-  delayStepSec: 60,                  // шаг отложенного старта, сек (если машина не примет — поставить 3600)
+  delayStepSec: 60,                  // шаг отложенного старта, сек, если DELAY_STEP = 0 (машина не примет — поставить 3600)
+  resetDelayOnStart: true,           // сбрасывать «Отложить старт» и «Завершить к» после старта программы
   unloadReminderMin: 60,             // напомнить «посуда не выгружена» через N минут после окончания (0 — выкл)
   notifyStart: true,                 // уведомлять о старте / отложенном старте
   tgToken: "",                       // токен Telegram-бота; пусто — уведомления только в лог и в «Последнее событие»
@@ -134,6 +135,8 @@ function isTrue(v) { return v === true || v === 1 || v === "True" || v === "true
 function toInt(v) { var n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
 function pad2(n) { return (n < 10 ? "0" : "") + n; }
 function isRunning(st) { return st === "Run" || st === "Pause" || st === "DelayedStart"; }
+// ActionRequired бывает посреди программы (например, открыли дверь) — выключать питание нельзя
+function isBusy(st) { return isRunning(st) || st === "ActionRequired"; }
 
 function progByKey(k) {
   for (var i = 0; i < PROGRAMS.length; i++) if (PROGRAMS[i].key === k) return PROGRAMS[i];
@@ -194,23 +197,28 @@ function programDuration(p) {
   return learnedDur[p.key] || p.dur;
 }
 
+// Момент «Завершить к» (мс); 0 — поле пустое; null — ошибка ввода
+function finishTarget(silent) {
+  var fin = String(dev[D + "/finish_at"] || "").trim();
+  if (!fin) return 0;
+  var m = /^(\d{1,2})[:.](\d{2})$/.exec(fin);
+  if (!m || +m[1] > 23 || +m[2] > 59) {
+    if (!silent) note("Неверное время «Завершить к»: «" + fin + "», нужно ЧЧ:ММ");
+    return null;
+  }
+  var now = new Date(), t = new Date(now.getTime());
+  t.setHours(+m[1], +m[2], 0, 0);
+  if (t.getTime() <= now.getTime()) t.setTime(t.getTime() + 86400000);
+  return t.getTime();
+}
+
 // Задержка старта в секундах по «Завершить к» или «Отложить старт, ч»; null — ошибка ввода
 function calcDelay(silent) {
-  var fin = String(dev[D + "/finish_at"] || "").trim();
-  var delay;
-  if (fin) {
-    var m = /^(\d{1,2})[:.](\d{2})$/.exec(fin);
-    if (!m || +m[1] > 23 || +m[2] > 59) {
-      if (!silent) note("Неверное время «Завершить к»: «" + fin + "», нужно ЧЧ:ММ");
-      return null;
-    }
-    var now = new Date(), t = new Date(now.getTime());
-    t.setHours(+m[1], +m[2], 0, 0);
-    if (t.getTime() <= now.getTime()) t.setTime(t.getTime() + 86400000);
-    delay = Math.floor((t.getTime() - now.getTime()) / 1000) - programDuration(progByUid(dev[D + "/program"]));
-  } else {
-    delay = toInt(dev[D + "/delay_h"]) * 3600;
-  }
+  var target = finishTarget(silent);
+  if (target === null) return null;
+  var delay = target
+    ? Math.floor((target - Date.now()) / 1000) - programDuration(progByUid(dev[D + "/program"]))
+    : toInt(dev[D + "/delay_h"]) * 3600;
   if (delay <= 0) return 0;
   var step = DELAY_STEP || CFG.delayStepSec;
   delay = Math.floor(delay / step) * step;
@@ -224,6 +232,12 @@ function startProgram() {
   if (!p) { note("Старт невозможен: не выбрана программа"); return false; }
   var delay = calcDelay(false);
   if (delay === null) return false;
+  // к «Завершить к» программа уже не успевает — запускаем сразу, но предупреждаем
+  var late = "", target = finishTarget(true);
+  var endNow = Date.now() + programDuration(p) * 1000;
+  if (target && delay === 0 && endNow > target) {
+    late = " — к " + fmtClock(target) + " не успеет, окончание ≈ " + fmtClock(endNow);
+  }
 
   var opts = [];
   OPTIONS.forEach(function (o) {
@@ -249,7 +263,7 @@ function startProgram() {
   withPower(function () {
     if (blocked()) { note("Старт отменён: " + blocked(), true); return; }
     cmd("activeProgram", payload);
-    note("Команда старта: " + p.title + (delay > 0 ? ", отложенный на " + fmtDur(delay) : ""));
+    note("Команда старта: " + p.title + (delay > 0 ? ", отложенный на " + fmtDur(delay) : "") + late);
   });
 }
 
@@ -458,8 +472,13 @@ function bind(ctrl, key, fromHc, send) {
 bind("power", "bsh_common_setting_powerstate",
   function (v) { return v === "On" ? true : v === "Off" ? false : null; },
   function (val) {
-    if (!val && isRunning(hc.bsh_common_status_operationstate)) {
+    var st = hc.bsh_common_status_operationstate;
+    if (!val && isRunning(st)) {
       note("Выключение отменено: идёт программа (используйте «Отменить программу»)");
+      return false;
+    }
+    if (!val && isBusy(st)) {
+      note("Выключение отменено: машина требует действия — посмотрите на дисплей (выключить можно кнопкой на машине)");
       return false;
     }
     hcSet(UID.PowerState, val ? "On" : "Off");
@@ -523,6 +542,11 @@ on("bsh_common_status_operationstate", function (v, prev, retained) {
   updateTimes();
   if (retained || prev === undefined || prev === v) return;
   if (isRunning(v)) setCtrl("finished", false);
+  if (isRunning(v) && !isRunning(prev) && CFG.resetDelayOnStart) {
+    // отложенный старт задаётся на один запуск: следующий старт (например, плиткой в Sprut.hub) — сразу
+    setCtrl("delay_h", 0);
+    setCtrl("finish_at", "");
+  }
 
   var p = progByKey(hc.bsh_common_root_activeprogram) || progByKey(hc.bsh_common_root_selectedprogram);
   var name = p ? p.title : "";
@@ -614,14 +638,22 @@ trackMqtt(CFG.base + "/event/+", function (msg) {
   }
 });
 
-trackMqtt(CFG.base + "/LWT", function (msg) {
-  var online = msg.value === "online";
+// Связь: <base>/LWT hcpy обновляет, когда подключается к машине или теряет её,
+// а homeconnect/LWT брокер ставит в offline, если завершился сам процесс hcpy.
+// Без второго топика после остановки hcpy «Связь с машиной» оставалась бы включённой.
+var link = { bridge: null, device: null };   // null — ещё не знаем
+function onLwt(which, msg) {
+  link[which] = msg.value === "online";
+  var online = link.bridge !== false && link.device === true;
   if (!msg.retained && dev[D + "/online"] !== online) {
-    note(online ? "Связь с машиной восстановлена" : "Потеряна связь с машиной");
+    note(online ? "Связь с машиной восстановлена" :
+         which === "bridge" ? "Потеряна связь с машиной: служба hcpy не работает" : "Потеряна связь с машиной");
   }
   setCtrl("online", online);
   updateTimes();
-});
+}
+trackMqtt(CFG.base.replace(/[^\/]*$/, "") + "LWT", function (msg) { onLwt("bridge", msg); });
+trackMqtt(CFG.base + "/LWT", function (msg) { onLwt("device", msg); });
 
 // обновлять «Окончание» по ходу времени
 setInterval(updateTimes, 30000);
