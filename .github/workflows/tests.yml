@@ -1,0 +1,41 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Зависимости
+        run: |
+          npm install --no-audit --no-fund
+          python -m pip install --require-hashes -r hcpy_wb7/requirements-wb7.txt
+      - name: Правило wb-rules (эмулятор)
+        run: node --test tests/*.test.js
+      - name: Генератор, hc_check, стык с hcpy
+        run: python -m unittest discover -s tests -v
+      - name: Установщик (shellcheck)
+        run: shellcheck hcpy_wb7/install_hcpy.sh
+
+  # make_kit.py обещает работу на старом системном Python контроллера
+  generator-old-python:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+      - run: python -m unittest tests.test_make_kit -v
