@@ -129,7 +129,7 @@ case "${1:-}" in
     systemctl disable --now hcpy.service 2>/dev/null || true
     rm -f "$UNIT" && systemctl daemon-reload
     if [ -f "$USER_MARK" ] && id -u "$HCPY_USER" >/dev/null 2>&1; then
-        userdel "$HCPY_USER" && echo "удалён пользователь $HCPY_USER" || true
+        if userdel "$HCPY_USER"; then echo "удалён пользователь $HCPY_USER"; fi
     fi
     rm -rf "$BASE"
     echo "Удалено: служба hcpy и $BASE"
