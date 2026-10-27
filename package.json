@@ -1,0 +1,11 @@
+{
+  "name": "hc-dishwasher-wb-sprut",
+  "private": true,
+  "description": "Тесты правила wb-rules, генератора и проверки ключа",
+  "scripts": {
+    "test": "node --test tests/*.test.js && python3 -m unittest discover -s tests"
+  },
+  "devDependencies": {
+    "acorn": "8.15.0"
+  }
+}

@@ -32,6 +32,7 @@ var UID = {
   AbortProgram: 512,
   StartInRelative: 558
 };
+var HAS = { door: true, remoteStart: true };   // есть ли у машины датчик двери и статус «удалённый старт разрешён»
 
 // dur — примерная длительность (сек), пока машина сама не сообщит точную
 var PROGRAMS = [
@@ -42,7 +43,7 @@ var PROGRAMS = [
   { uid: 8202, key: "NightWash", title: "Тихая (ночная)", dur: 12000 },
   { uid: 8200, key: "PreRinse", title: "Предварительное ополаскивание", dur: 900 },
   { uid: 8215, key: "MachineCare", title: "Уход за машиной", dur: 7200 },
-  { uid: 32828, key: "001", title: "Избранное", dur: 900 }
+  { uid: 32828, key: "001", title: "Избранное", dur: 7200 }
 ];
 
 var OPTIONS = [
@@ -208,12 +209,17 @@ function finishTarget(silent) {
   }
   var now = new Date(), t = new Date(now.getTime());
   t.setHours(+m[1], +m[2], 0, 0);
-  if (t.getTime() <= now.getTime()) t.setTime(t.getTime() + 86400000);
+  if (t.getTime() <= now.getTime()) {
+    // завтра в ЧЧ:ММ по календарю, а не +24 ч: в ночь перевода часов это разное время
+    t.setDate(t.getDate() + 1);
+    t.setHours(+m[1], +m[2], 0, 0);
+  }
   return t.getTime();
 }
 
-// Задержка старта в секундах по «Завершить к» или «Отложить старт, ч»; null — ошибка ввода
-function calcDelay(silent) {
+// Желаемая задержка старта в секундах по «Завершить к» или «Отложить старт, ч»,
+// с шагом машины, но без её ограничения DELAY_MAX; null — ошибка ввода
+function wantedDelay(silent) {
   var target = finishTarget(silent);
   if (target === null) return null;
   var delay = target
@@ -221,8 +227,12 @@ function calcDelay(silent) {
     : toInt(dev[D + "/delay_h"]) * 3600;
   if (delay <= 0) return 0;
   var step = DELAY_STEP || CFG.delayStepSec;
-  delay = Math.floor(delay / step) * step;
-  return Math.min(delay, DELAY_MAX);
+  return Math.floor(delay / step) * step;
+}
+
+function calcDelay(silent) {
+  var delay = wantedDelay(silent);
+  return delay === null ? null : Math.min(delay, DELAY_MAX);
 }
 
 function startProgram() {
@@ -237,6 +247,8 @@ function startProgram() {
   var endNow = Date.now() + programDuration(p) * 1000;
   if (target && delay === 0 && endNow > target) {
     late = " — к " + fmtClock(target) + " не успеет, окончание ≈ " + fmtClock(endNow);
+  } else if (wantedDelay(true) > DELAY_MAX) {
+    late = " — дольше машина не откладывает" + (target ? ", окончание ≈ " + fmtClock(endNow + delay * 1000) : "");
   }
 
   var opts = [];
@@ -251,8 +263,10 @@ function startProgram() {
   if (opts.length) payload.options = opts;
 
   function blocked() {
-    if (hc.bsh_common_status_doorstate === "Open") return "дверь открыта";
-    if (!isTrue(hc.bsh_common_status_remotecontrolstartallowed)) return "удалённый старт не разрешён — нажмите Remote Start на машине";
+    if (HAS.door && hc.bsh_common_status_doorstate === "Open") return "дверь открыта";
+    if (HAS.remoteStart && !isTrue(hc.bsh_common_status_remotecontrolstartallowed)) {
+      return "удалённый старт не разрешён — нажмите Remote Start на машине";
+    }
     return "";
   }
   // машина уже включена — проверяем сразу, чтобы кнопка в Sprut.hub/WB сразу вернулась назад
@@ -390,8 +404,10 @@ c("end_time",        { title: "Окончание",                type: "text",
 OPTIONS.forEach(function (o) {
   c(o.ctrl, { title: o.title, type: "switch", value: false });
 });
-c("delay_h",         { title: "Отложить старт, ч",        type: "range",  value: 0, min: 0, max: 24 });
-c("finish_at",       { title: "Завершить к (ЧЧ:ММ, пусто — не использовать)", type: "text", value: "", readonly: false });
+if (UID.StartInRelative) {
+  c("delay_h",       { title: "Отложить старт, ч",        type: "range",  value: 0, min: 0, max: Math.max(1, Math.floor(DELAY_MAX / 3600)) });
+  c("finish_at",     { title: "Завершить к (ЧЧ:ММ, пусто — не использовать)", type: "text", value: "", readonly: false });
+}
 c("start",           { title: "▶ Старт",                  type: "pushbutton" });
 c("abort",           { title: "■ Отменить программу",     type: "pushbutton" });
 c("remote_start",    { title: "Удалённый старт разрешён", type: "switch", value: false, readonly: true });
@@ -428,6 +444,7 @@ SETTINGS.forEach(function (s) {
     def.type = "range";
     def.min = s.min / s.scale;
     def.max = s.max / s.scale;
+    def.value = def.min;                     // до первых данных от машины
     def.units = s.units;
   }
   c(s.ctrl, def);
@@ -522,14 +539,18 @@ SETTINGS.forEach(function (s) {
     function (val) {
       if (s.kind === "bool") hcSet(s.uid, !!val);
       else if (s.kind === "num") hcSet(s.uid, Math.max(s.min, Math.min(s.max, Math.round(val) * s.scale)));
-      else hcSet(s.uid, toInt(val));
+      else if (!s.values.hasOwnProperty(String(toInt(val)))) {
+        note("Недопустимое значение для «" + s.title.replace(/^Настройка: /, "") + "»: " + val +
+             ", можно: " + Object.keys(s.values).join(", "));
+        return false;
+      } else hcSet(s.uid, toInt(val));
     });
 });
 
 defineRule("dishwasher_start", { whenChanged: D + "/start", then: startProgram });
 defineRule("dishwasher_abort", { whenChanged: D + "/abort", then: abortProgram });
 defineRule("dishwasher_preview", {
-  whenChanged: [D + "/program", D + "/delay_h", D + "/finish_at"],
+  whenChanged: UID.StartInRelative ? [D + "/program", D + "/delay_h", D + "/finish_at"] : [D + "/program"],
   then: updateTimes
 });
 
@@ -542,7 +563,7 @@ on("bsh_common_status_operationstate", function (v, prev, retained) {
   updateTimes();
   if (retained || prev === undefined || prev === v) return;
   if (isRunning(v)) setCtrl("finished", false);
-  if (isRunning(v) && !isRunning(prev) && CFG.resetDelayOnStart) {
+  if (isRunning(v) && !isRunning(prev) && CFG.resetDelayOnStart && UID.StartInRelative) {
     // отложенный старт задаётся на один запуск: следующий старт (например, плиткой в Sprut.hub) — сразу
     setCtrl("delay_h", 0);
     setCtrl("finish_at", "");
