@@ -52,7 +52,7 @@ def run_cli(*args):
 
 def rule_cells(rule_src, model):
     """Контролы, которые создаст правило (по defineVirtualDevice/c(...) и блоку МОДЕЛЬ)."""
-    cells = set(re.findall(r'^c\("([a-z0-9_]+)"', rule_src, re.M))
+    cells = set(re.findall(r'^\s*c\("([a-z0-9_]+)"', rule_src, re.M))
     cells |= {o["ctrl"] for o in model["options"]} | {s["ctrl"] for s in model["settings"]}
     cells |= {"prog_" + p["key"].lower() for p in model["programs"]}
     return cells
@@ -122,9 +122,8 @@ class PickDevice(unittest.TestCase):
             src.write_text(json.dumps(smv()), encoding="utf-8")
             self.assertEqual(run_cli(src, "--out", out).returncode, 0)
 
-    @unittest.expectedFailure
     def test_cli_accepts_utf8_bom(self):
-        # известное: Блокнот Windows может сохранить devices.json с BOM — генератор падает
+        # Блокнот Windows может сохранить devices.json с BOM
         with tempfile.TemporaryDirectory() as out:
             src = Path(out) / "bom.json"
             src.write_bytes(b"\xef\xbb\xbf" + json.dumps([smv()]).encode("utf-8"))
@@ -141,7 +140,11 @@ class BuildModel(unittest.TestCase):
         self.assertEqual([p["key"] for p in m["programs"]],
                          ["Eco50", "Auto2", "Intensiv70", "Quick65", "NightWash", "PreRinse", "MachineCare", "001"])
         self.assertEqual(m["programs"][-1]["title"], "Избранное")
+        self.assertEqual(m["programs"][-1]["dur"], 7200, "избранное — как неизвестная программа")
         self.assertEqual(m["warnings"], [])
+        self.assertEqual(m["has"], {"door": True, "remoteStart": True})
+        self.assertEqual(m["missing"], [], "фикстура описывает всё, что слушает правило")
+        self.assertEqual(m["unknown_events"], [])
 
     def test_missing_features_give_warnings_and_null_uids(self):
         m = build(other())
@@ -150,6 +153,35 @@ class BuildModel(unittest.TestCase):
         w = "\n".join(m["warnings"])
         self.assertIn("AbortProgram", w)
         self.assertIn("StartInRelative", w)
+
+    def test_missing_required_features(self):
+        m = build(other())
+        self.assertEqual(m["has"], {"door": False, "remoteStart": False})
+        w = "\n".join(m["warnings"])
+        for name in ("OperationState", "DoorState", "RemoteControlStartAllowed"):
+            self.assertIn("BSH.Common.Status." + name, w)
+        self.assertNotIn("Root.ActiveProgram", w)
+        self.assertIn("bsh_common_event_aquastopoccured", m["missing"])
+        self.assertNotIn("bsh_common_status_doorstate", m["missing"], "о нём уже предупредили")
+        rule = make_kit.build_rule(m)
+        self.assertIn("var HAS = { door: false, remoteStart: false };", rule)
+
+    def test_without_active_program_warns(self):
+        dev = smv()
+        dev["features"] = {k: v for k, v in dev["features"].items() if v["name"] != "BSH.Common.Root.ActiveProgram"}
+        self.assertTrue(any("ActiveProgram" in w and "старт программы" in w for w in build(dev)["warnings"]))
+
+    def test_unknown_events_are_listed(self):
+        dev = smv()
+        dev["features"]["99999"] = {"name": "Dishcare.Dishwasher.Event.NewThing", "available": "true",
+                                    "values": {"0": "Off", "1": "Present"}}
+        self.assertEqual(build(dev)["unknown_events"], ["Dishcare.Dishwasher.Event.NewThing"])
+
+    def test_rule_known_keys(self):
+        keys = make_kit.rule_known_keys()
+        self.assertIn("bsh_common_status_operationstate", keys)
+        self.assertIn("bsh_common_event_aquastopoccured", keys)
+        self.assertIn("dishcare_dishwasher_event_saltlack", keys)
 
     def test_unknown_program_and_option_kept_as_is(self):
         m = build(other())
@@ -218,6 +250,60 @@ class BuildModel(unittest.TestCase):
             build(dev)
 
 
+OLD_RULE = """var CFG = {
+  id: "dishwasher",
+  base: "homeconnect/old",           // генератор задаёт сам — не переносится
+  powerOnDelayMs: 5000,
+  unloadReminderMin: 30,             // свой комментарий
+  notifyStart: false,
+  removedOption: 1,
+  tgToken: "123456:SECRET,with,commas",
+  tgChatId: "-100200"
+};
+"""
+
+
+class KeepCfg(unittest.TestCase):
+    def test_values_carried_over(self):
+        new = make_kit.build_rule(build(smv()))
+        src, kept, added, gone = make_kit.keep_cfg(new, OLD_RULE)
+        cfg = make_kit.cfg_values(src)
+        self.assertEqual(cfg["tgToken"], '"123456:SECRET,with,commas"')
+        self.assertEqual(cfg["tgChatId"], '"-100200"')
+        self.assertEqual(cfg["unloadReminderMin"], "30")
+        self.assertEqual(cfg["notifyStart"], "false")
+        self.assertEqual(cfg["base"], '"homeconnect/dishwasher"', "base всегда из devices.json")
+        self.assertEqual(sorted(kept), ["notifyStart", "tgChatId", "tgToken", "unloadReminderMin"])
+        self.assertIn("resetDelayOnStart", added)
+        self.assertEqual(gone, ["removedOption"])
+        # остальное правило не тронуто, комментарии нового правила на месте
+        self.assertEqual(src.replace(make_kit.cfg_block(src).group(1), ""),
+                         new.replace(make_kit.cfg_block(new).group(1), ""))
+        self.assertIn("unloadReminderMin: 30,             // напомнить", src)
+
+    def test_no_cfg_in_old_rule(self):
+        with self.assertRaises(SystemExit):
+            make_kit.keep_cfg(make_kit.build_rule(build(smv())), "// not a rule")
+
+    def test_cli_does_not_print_secrets(self):
+        with tempfile.TemporaryDirectory() as out:
+            old = Path(out) / "old.js"
+            old.write_text(OLD_RULE, encoding="utf-8")
+            r = run_cli(FIXTURES / "smv4hvx31e.json", "--out", out, "--keep-cfg", old)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("перенесено: ", r.stdout)
+            self.assertIn("tgToken", r.stdout)
+            self.assertNotIn("SECRET", r.stdout)
+            self.assertIn('tgToken: "123456:SECRET,with,commas"',
+                          (Path(out) / "dishwasher.js").read_text(encoding="utf-8"))
+
+    def test_roundtrip_with_example(self):
+        # перенос из самого себя ничего не меняет
+        ex = (EXAMPLE / "dishwasher.js").read_text(encoding="utf-8")
+        src, kept, added, gone = make_kit.keep_cfg(ex, ex)
+        self.assertEqual((src, kept, added, gone), (ex, [], [], []))
+
+
 class Template(unittest.TestCase):
     def check_links(self, dev):
         m = build(dev)
@@ -261,6 +347,20 @@ class Template(unittest.TestCase):
         self.assertEqual(by_name["Настройка: Эко при включении"]["type"], "Switch")
         sound = by_name["Настройка: громкость сигнала (0–3)"]["characteristics"][0]
         self.assertEqual((sound["minValue"], sound["maxValue"]), (0, 3))
+
+    def test_sparse_enum_lists_allowed_values(self):
+        _, tpl = self.check_links(other())
+        names = [s["name"] for s in tpl["services"]]
+        self.assertIn("Настройка: удалённое управление (0, 2)", names)
+        self.assertIn("Настройка: жёсткость воды (0–3)", names)
+
+    def test_delay_slider_follows_machine_limit(self):
+        dev = smv()
+        sir = [f for f in dev["features"].values() if f["name"] == "BSH.Common.Option.StartInRelative"][0]
+        sir["max"] = "21600"
+        tpl = make_kit.build_template(build(dev))
+        delay = [s for s in tpl["services"] if s["name"] == "Отложить старт, ч"][0]["characteristics"][0]
+        self.assertEqual(delay["maxValue"], 6)
 
     def test_no_delay_services_without_start_in_relative(self):
         _, tpl = self.check_links(other())

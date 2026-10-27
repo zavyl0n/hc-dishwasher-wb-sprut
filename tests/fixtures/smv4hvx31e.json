@@ -275,6 +275,230 @@
      "1": "Present",
      "2": "Confirmed"
     }
+   },
+   "9001": {
+    "name": "BSH.Common.Event.ConfirmPermanentRemoteStart",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9002": {
+    "name": "BSH.Common.Event.LowWaterPressure",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9003": {
+    "name": "BSH.Common.Event.ProgramAborted",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9004": {
+    "name": "BSH.Common.Event.SoftwareDownloadAvailable",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9005": {
+    "name": "BSH.Common.Event.SoftwareUpdateAvailable",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9006": {
+    "name": "BSH.Common.Option.EnergyForecast",
+    "access": "read",
+    "available": "true"
+   },
+   "9007": {
+    "name": "BSH.Common.Option.WaterForecast",
+    "access": "read",
+    "available": "true"
+   },
+   "9008": {
+    "name": "BSH.Common.Status.ErrorCodesList",
+    "access": "read",
+    "available": "true"
+   },
+   "9009": {
+    "name": "BSH.Common.Status.Program.All.Count.Started",
+    "access": "read",
+    "available": "true"
+   },
+   "9010": {
+    "name": "BSH.Common.Status.ProgramRunDetail.EndTrigger",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "ProgramFinished",
+     "1": "ProgramAbortedByUser",
+     "2": "ProgramAbortedByAppliance"
+    }
+   },
+   "9011": {
+    "name": "Dishcare.Dishwasher.Event.CheckFilterSystem",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9012": {
+    "name": "Dishcare.Dishwasher.Event.DrainingNotPossible",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9013": {
+    "name": "Dishcare.Dishwasher.Event.DrainPumpBlocked",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9014": {
+    "name": "Dishcare.Dishwasher.Event.InternalError",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9015": {
+    "name": "Dishcare.Dishwasher.Event.LowVoltage",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9016": {
+    "name": "Dishcare.Dishwasher.Event.MachineCareAndFilterCleaningReminder",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9017": {
+    "name": "Dishcare.Dishwasher.Event.MachineCareReminder",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9018": {
+    "name": "Dishcare.Dishwasher.Event.RinseAidLack",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9019": {
+    "name": "Dishcare.Dishwasher.Event.RinseAidNearlyEmpty",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9020": {
+    "name": "Dishcare.Dishwasher.Event.SaltLack",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9021": {
+    "name": "Dishcare.Dishwasher.Event.SmartFilterCleaningReminder",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9022": {
+    "name": "Dishcare.Dishwasher.Event.WaterheaterCalcified",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "Off",
+     "1": "Present",
+     "2": "Confirmed"
+    }
+   },
+   "9023": {
+    "name": "Dishcare.Dishwasher.Status.MachineCareReminder.RemainingProgramRuns",
+    "access": "read",
+    "available": "true"
+   },
+   "9024": {
+    "name": "Dishcare.Dishwasher.Status.ProgramPhase",
+    "access": "read",
+    "available": "true",
+    "values": {
+     "0": "None",
+     "1": "PreRinse",
+     "2": "MainWash",
+     "3": "FinalRinse",
+     "4": "Drying"
+    }
+   },
+   "9025": {
+    "name": "Dishcare.Dishwasher.Status.SilenceOnDemandRemainingTime",
+    "access": "read",
+    "available": "true",
+    "refCID": "10",
+    "refDID": "82"
    }
   }
  }

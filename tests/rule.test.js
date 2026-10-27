@@ -406,7 +406,7 @@ for (const file of ["rule/dishwasher.js", "examples/SMV4HVX31E/dishwasher.js"]) 
         assert.equal(e.get("finish_at"), "07:00");
       });
 
-      it("«Завершить к» через ночь перехода на летнее время", { todo: "известная ошибка: +24 ч вместо «завтра в ЧЧ:ММ» — окончание на час позже" }, () => {
+      it("«Завершить к» через ночь перехода на летнее время", () => {
         const prev = process.env.TZ;
         process.env.TZ = "Europe/Berlin";      // 29.03.2026 02:00 → 03:00
         try {
@@ -498,8 +498,8 @@ for (const file of ["rule/dishwasher.js", "examples/SMV4HVX31E/dishwasher.js"]) 
       });
     });
 
-    describe("мелочи (известные)", () => {
-      it("начальные значения контролов в пределах min/max", { todo: "«длительность тихого режима» стартует с 0 при min 1" }, () => {
+    describe("контролы", () => {
+      it("начальные значения в пределах min/max", () => {
         const e = boot(file);
         const bad = Object.keys(e.defs).filter(k => {
           const d = e.defs[k];
@@ -507,27 +507,43 @@ for (const file of ["rule/dishwasher.js", "examples/SMV4HVX31E/dishwasher.js"]) 
         });
         assert.deepEqual(bad, []);
       });
+
+      it("«Отложить старт, ч» — до максимума машины (24 ч)", () => {
+        assert.equal(boot(file).defs["dishwasher/delay_h"].max, 24);
+      });
+
+      it("«Избранное» до первых данных от машины считается программой на 2 ч", () => {
+        const e = boot(file, { state: { bsh_common_root_selectedprogram: "001", bsh_common_option_remainingprogramtime: "0" } });
+        e.user("finish_at", "07:00");
+        e.press("start");
+        assert.deepEqual(starts(e), [{ program: UID.fav, options: [{ uid: UID.sir, value: 39600 - 7200 }] }]);
+      });
     });
   });
 }
 
 // ---------------------------------------------------------------------------
-// Правило, сгенерированное для другой модели: нет отложенного старта и отмены
+// Правила, сгенерированные под другие devices.json
 // ---------------------------------------------------------------------------
-describe("сгенерированное правило: модель без отложенного старта и отмены", () => {
-  const py = spawnSync(process.platform === "win32" ? "python" : "python3", ["--version"]);
-  const skip = py.status !== 0 && "нужен python3";
-  let file, dir;
-  if (!skip) {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "hc-kit-"));
-    after(() => fs.rmSync(dir, { recursive: true, force: true }));
-    const devs = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "other_model.json"), "utf8"));
-    devs[1].name = "dishwasher";             // в фикстуре кириллица — для теста генератора
-    fs.writeFileSync(path.join(dir, "in.json"), JSON.stringify(devs));
-    const r = spawnSync("python3", [path.join(ROOT, "tools", "make_kit.py"), path.join(dir, "in.json"), "--out", dir]);
-    assert.equal(r.status, 0, String(r.stderr));
-    file = path.relative(ROOT, path.join(dir, "dishwasher.js"));
-  }
+const PY = process.platform === "win32" ? "python" : "python3";
+const NO_PY = spawnSync(PY, ["--version"]).status !== 0 && "нужен python3";
+
+/** Собрать правило генератором из фикстуры, изменённой функцией mutate(devices). */
+function generate(fixture, mutate) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hc-kit-"));
+  after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const devs = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", fixture), "utf8"));
+  if (mutate) mutate(devs);
+  fs.writeFileSync(path.join(dir, "in.json"), JSON.stringify(devs));
+  const r = spawnSync(PY, [path.join(ROOT, "tools", "make_kit.py"), path.join(dir, "in.json"), "--out", dir]);
+  assert.equal(r.status, 0, String(r.stderr));
+  return path.relative(ROOT, path.join(dir, "dishwasher.js"));
+}
+
+describe("сгенерированное правило: модель без отложенного старта, отмены, двери и статуса удалённого старта", () => {
+  const skip = NO_PY;
+  // в фикстуре кириллическое имя — для теста генератора; здесь латиница
+  const file = skip ? null : generate("other_model.json", devs => { devs[1].name = "dishwasher"; });
 
   it("загружается, программы и настройки этой модели", { skip }, () => {
     const e = boot(file, { state: { bsh_common_root_selectedprogram: "LearningDishwasher" } });
@@ -539,20 +555,56 @@ describe("сгенерированное правило: модель без о�
     assert.deepEqual(sets(e), [{ uid: UID.silencetime, value: 12 }], "без пересчёта в минуты");
   });
 
-  it("отложенный старт и отмена — понятный отказ без команд", { skip }, () => {
+  it("полей отложенного старта нет; старт сразу; отмена — понятный отказ", { skip }, () => {
     const e = boot(file);
-    e.user("delay_h", 2);
-    e.press("start");
-    assert.deepEqual(starts(e), []);
-    assert.match(e.last(), /Отложенный старт не поддерживается/);
-    e.user("delay_h", 0);
+    assert.equal("dishwasher/delay_h" in e.defs, false);
+    assert.equal("dishwasher/finish_at" in e.defs, false);
     e.press("start");
     assert.deepEqual(starts(e), [{ program: UID.eco }]);
+    op(e, "Run");
+    op(e, "Finished");
+    noErrors(e);
     op(e, "Run");
     e.clear();
     e.press("abort");
     assert.deepEqual(sets(e), []);
     assert.match(e.last(), /Отмена программы не поддерживается/);
+  });
+
+  it("без датчика двери и статуса удалённого старта старт не блокируется", { skip }, () => {
+    const e = boot(file, { state: { bsh_common_status_remotecontrolstartallowed: "False", bsh_common_status_doorstate: "Open" } });
+    e.press("start");
+    assert.deepEqual(starts(e), [{ program: UID.eco }]);
+  });
+
+  it("перечисление с пропуском (0 и 2): недопустимое 1 не отправляется", { skip }, () => {
+    const e = boot(file, { state: { bsh_common_setting_remotecontrollevel: "Monitoring" } });
+    e.user("set_remotelevel", 1);
+    assert.deepEqual(sets(e), []);
+    assert.equal(e.get("set_remotelevel"), 0, "контрол сразу вернулся");
+    assert.match(e.last(), /Недопустимое значение для «удалённое управление»: 1, можно: 0, 2/);
+    e.user("set_remotelevel", 2);
+    assert.deepEqual(sets(e), [{ uid: 15, value: 2 }]);
+  });
+});
+
+describe("сгенерированное правило: машина откладывает старт не больше чем на 6 ч", () => {
+  const skip = NO_PY;
+  const file = skip ? null : generate("smv4hvx31e.json", devs => {
+    const f = Object.values(devs[0].features).find(x => x.name === "BSH.Common.Option.StartInRelative");
+    f.max = "21600";
+  });
+
+  it("ползунок до 6 ч", { skip }, () => {
+    assert.equal(boot(file).defs["dishwasher/delay_h"].max, 6);
+  });
+
+  it("«Завершить к» дальше лимита: откладывает на максимум и говорит об этом", { skip }, () => {
+    const e = boot(file);
+    e.user("finish_at", "07:00");            // нужно 26100 с, можно 21600
+    e.press("start");
+    assert.deepEqual(starts(e)[0].options, [{ uid: UID.sir, value: 21600 }]);
+    assert.match(e.last(), /отложенный на 6 ч 00 мин — дольше машина не откладывает, окончание ≈ 05:45 завтра$/);
   });
 });
 

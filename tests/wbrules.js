@@ -210,4 +210,4 @@ function load(rulePath, opts) {
   return e;
 }
 
-module.exports = { load, patchCfg, NOT_ES5 };
+module.exports = { load, patchCfg, NOT_ES5, STRIP_ES5 };

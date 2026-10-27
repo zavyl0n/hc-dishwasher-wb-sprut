@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """make_kit.py — собирает правило wb-rules и шаблон Sprut.hub под вашу посудомойку.
 
-    python make_kit.py путь/к/devices.json [--name dishwasher] [--out out]
+    python make_kit.py путь/к/devices.json [--name dishwasher] [--out out] [--keep-cfg старое/dishwasher.js]
 
 На выходе в папке out/:
     dishwasher.js             — правило для /etc/wb-rules/ (программы, опции и настройки вашей модели)
@@ -10,6 +10,9 @@
 Из devices.json читаются только описание возможностей машины (features),
 модель (description) и имя (name). Ключи доступа (key, iv) не читаются
 и никуда не записываются. Нужен Python 3.8+, сторонние пакеты не нужны.
+
+--keep-cfg переносит настройки блока CFG (токен Telegram и т. п.) из уже
+установленного правила, например /etc/wb-rules/dishwasher.js, в новое.
 """
 import argparse
 import io
@@ -84,6 +87,19 @@ KNOWN_SETTINGS = [
     ("BSH.Common.Setting.RemoteControlLevel", "set_remotelevel", "удалённое управление", None),
     ("BSH.Common.Setting.AllowBackendConnection", "set_cloud", "связь с облаком Home Connect", None),
 ]
+
+# Функции, на которые рассчитывает правило: (имя, что будет без неё)
+REQUIRED = [
+    ("BSH.Common.Root.ActiveProgram", "старт программы не будет работать (hcpy не подпишется на activeProgram)"),
+    ("BSH.Common.Root.SelectedProgram", "выбор программы и опций до старта не будет работать"),
+    ("BSH.Common.Status.OperationState", "правило не узнает состояние машины: мойку, окончание, уведомления"),
+    ("BSH.Common.Status.DoorState", "правило не проверит дверь перед стартом, «не выгружена» придёт всегда"),
+    ("BSH.Common.Status.RemoteControlStartAllowed",
+     "правило не проверит «удалённый старт разрешён», откажет ли — решит машина"),
+]
+# значения, которые hcpy берёт не из features, а из /ci/info и /ni/info
+NOT_FEATURES = {"rssi", "swversion"}
+CFG_NOT_KEPT = {"id", "base"}      # их задаёт генератор
 
 VALUE_RU = {
     "Off": "Выкл", "On": "Вкл", "Low": "Тихо", "Medium": "Средне", "High": "Громко",
@@ -178,7 +194,7 @@ def build_model(dev):
             programs.append({"uid": uid, "key": key, "title": title, "dur": dur})
         elif name.startswith("BSH.Common.Program.Favorite."):
             key = name.rsplit(".", 1)[1]
-            favorites.append({"uid": uid, "key": key, "title": "Избранное " + key.lstrip("0"), "dur": 900})
+            favorites.append({"uid": uid, "key": key, "title": "Избранное " + key.lstrip("0"), "dur": 7200})
     order = {k: i for i, k in enumerate(PROGRAM_ORDER)}
     programs.sort(key=lambda p: (order.get(p["key"], len(order)), p["key"]))
     favorites.sort(key=lambda p: p["key"])
@@ -225,6 +241,19 @@ def build_model(dev):
             continue
         settings.append(s)
 
+    # что из нужного правилу у машины есть
+    names = set(feats)
+    for name, what in REQUIRED:
+        if name not in names:
+            warnings.append("нет %s: %s" % (name, what))
+    has = {"door": "BSH.Common.Status.DoorState" in names,
+           "remoteStart": "BSH.Common.Status.RemoteControlStartAllowed" in names}
+    model_keys = {topic_key(n) for n, (_, f) in feats.items() if available(f)}
+    known = rule_known_keys()
+    missing = sorted(known - model_keys - NOT_FEATURES - {topic_key(n) for n, _ in REQUIRED})
+    unknown_events = sorted(n for n, (_, f) in feats.items()
+                            if ".Event." in n and available(f) and topic_key(n) not in known)
+
     topic = clean_name(dev.get("name", ""))
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", topic):
         warnings.append("имя машины %r в топиках hcpy станет %r — переименуйте её в devices.json латиницей "
@@ -235,10 +264,25 @@ def build_model(dev):
         "name": dev.get("name", "dishwasher"),
         "brand": str(desc.get("brand", "Bosch")).title(),
         "model": desc.get("model") or "unknown",
-        "uids": uids, "delay_max": delay_max, "delay_step": delay_step,
+        "uids": uids, "delay_max": delay_max, "delay_step": delay_step, "has": has,
         "programs": programs, "options": options, "settings": settings,
-        "warnings": warnings,
+        "warnings": warnings, "missing": missing, "unknown_events": unknown_events,
     }
+
+
+def read_rule_src():
+    with io.open(RULE_SRC, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def rule_known_keys():
+    """Ключи state/* и event/*, которые правило слушает (on("...") и таблица EVENTS)."""
+    src = read_rule_src()
+    keys = set(re.findall(r'\bon\("([a-z0-9_]+)"', src))
+    m = re.search(r"var EVENTS = \{(.*?)\n\};", src, re.S)
+    if m:
+        keys |= set(re.findall(r"^\s*([a-z0-9_]+):\s*\{", m.group(1), re.M))
+    return keys
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +299,10 @@ def model_block(m):
            "var DELAY_STEP = %d;                  // шаг отложенного старта из devices.json; 0 — брать CFG.delayStepSec" % m["delay_step"],
            "var UID = {"]
     out.append(",\n".join("  %s: %s" % (k, "null" if v is None else v) for k, v in m["uids"].items()))
-    out += ["};", "",
+    out += ["};",
+            "var HAS = { door: %s, remoteStart: %s };   // есть ли у машины датчик двери и статус «удалённый старт разрешён»"
+            % (js(m["has"]["door"]), js(m["has"]["remoteStart"])),
+            "",
             "// dur — примерная длительность (сек), пока машина сама не сообщит точную",
             "var PROGRAMS = ["]
     out.append(",\n".join("  { uid: %d, key: %s, title: %s, dur: %d }" % (p["uid"], js(p["key"]), js(p["title"]), p["dur"])
@@ -282,7 +329,7 @@ def model_block(m):
 
 
 def build_rule(m):
-    src = io.open(RULE_SRC, encoding="utf-8").read()
+    src = read_rule_src()
     pat = re.compile(r"// ===== BEGIN MODEL.*?// ===== END MODEL =====\n", re.S)
     if not pat.search(src):
         sys.exit("В %s не найден блок BEGIN MODEL / END MODEL" % RULE_SRC)
@@ -292,6 +339,45 @@ def build_rule(m):
     if n != 1:
         sys.exit("В правиле не найдено поле CFG.base")
     return src
+
+
+CFG_LINE = re.compile(r'^(\s*(\w+):\s*)("(?:[^"\\]|\\.)*"|[^,\s/][^,/]*?)(\s*,?\s*(?://.*)?)$')
+
+
+def cfg_block(src):
+    m = re.search(r"^var CFG = \{\n(.*?)\n\};", src, re.S | re.M)
+    return m
+
+
+def cfg_values(src):
+    """Поля блока var CFG = {...}: {имя: значение как текст JS}."""
+    m = cfg_block(src)
+    out = {}
+    for line in (m.group(1).splitlines() if m else []):
+        mm = CFG_LINE.match(line)
+        if mm:
+            out[mm.group(2)] = mm.group(3).strip()
+    return out
+
+
+def keep_cfg(new_src, old_src):
+    """Перенести значения CFG из старого правила в новое. -> (правило, перенесено, новые, пропали)"""
+    old = cfg_values(old_src)
+    if not old:
+        sys.exit("В старом правиле не найден блок var CFG = { ... }")
+    m = cfg_block(new_src)
+    kept, lines = [], []
+    for line in m.group(1).splitlines():
+        mm = CFG_LINE.match(line)
+        if mm and mm.group(2) in old and mm.group(2) not in CFG_NOT_KEPT and old[mm.group(2)] != mm.group(3).strip():
+            line = mm.group(1) + old[mm.group(2)] + mm.group(4)
+            kept.append(mm.group(2))
+        lines.append(line)
+    new_keys = cfg_values(new_src)
+    added = sorted(set(new_keys) - set(old))
+    gone = sorted(set(old) - set(new_keys))
+    src = new_src[:m.start(1)] + "\n".join(lines) + new_src[m.end(1):]
+    return src, kept, added, gone
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +443,8 @@ def build_template(m):
     services += [switch(short(o["title"]), o["ctrl"]) for o in m["options"]]
     if m["uids"]["StartInRelative"]:
         services += [
-            opt_int("Отложить старт, ч", "delay_h", writable_=True, minValue=0, maxValue=24, minStep=1),
+            opt_int("Отложить старт, ч", "delay_h", writable_=True, minValue=0,
+                    maxValue=max(1, m["delay_max"] // 3600), minStep=1),
             opt_str("Завершить к (ЧЧ:ММ)", "finish_at", writable_=True),
         ]
     services += [
@@ -398,7 +485,10 @@ def build_template(m):
                 label = s.get("_switch_title") or "%s: %s" % (s["title"][len("Настройка: "):], s["values"][1][1])
                 services.append(switch("Настройка: " + label, s["ctrl"], visible=False))
             else:
-                services.append(opt_int("%s (%d–%d)" % (s["title"], keys[0], keys[-1]), s["ctrl"], writable_=True,
+                # с пропусками (например 0 и 2) перечисляем допустимые: Sprut.hub знает только диапазон
+                rng = ("%d–%d" % (keys[0], keys[-1]) if keys == list(range(keys[0], keys[-1] + 1))
+                       else ", ".join(str(k) for k in keys))
+                services.append(opt_int("%s (%s)" % (s["title"], rng), s["ctrl"], writable_=True,
                                         visible=False, minValue=keys[0], maxValue=keys[-1], minStep=1))
         else:
             lo, hi = s["min"] // s["scale"], s["max"] // s["scale"]
@@ -431,9 +521,13 @@ def main():
     ap.add_argument("devices_json", help="devices.json от hcpy (hc-login.py или homeconnect-profile-downloader)")
     ap.add_argument("--name", help="поле name нужной машины, если в devices.json их несколько")
     ap.add_argument("--out", default="out", help="папка для результата (по умолчанию ./out)")
+    ap.add_argument("--keep-cfg", metavar="RULE.js",
+                    help="перенести настройки CFG (Telegram и др.) из установленного правила, "
+                         "например /etc/wb-rules/dishwasher.js")
     a = ap.parse_args()
 
-    with io.open(a.devices_json, encoding="utf-8") as fh:
+    # utf-8-sig: Блокнот Windows может сохранить файл с BOM
+    with io.open(a.devices_json, encoding="utf-8-sig") as fh:
         data = json.load(fh)
     devices = data if isinstance(data, list) else [data]
     m = build_model(pick_device(devices, a.name))
@@ -441,8 +535,13 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     rule_path = os.path.join(a.out, "dishwasher.js")
     tpl_path = os.path.join(a.out, "spruthub_dishwasher.json")
+    rule = build_rule(m)
+    kept = added = gone = None
+    if a.keep_cfg:
+        with io.open(a.keep_cfg, encoding="utf-8-sig") as fh:
+            rule, kept, added, gone = keep_cfg(rule, fh.read())
     with io.open(rule_path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(build_rule(m))
+        fh.write(rule)
     with io.open(tpl_path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(json.dumps(build_template(m), ensure_ascii=False, indent=2) + "\n")
 
@@ -450,6 +549,17 @@ def main():
     print("Программы (%d): %s" % (len(m["programs"]), ", ".join(p["title"] for p in m["programs"])))
     print("Опции (%d): %s" % (len(m["options"]), ", ".join(short(o["title"])[len("Опция: "):] for o in m["options"]) or "нет"))
     print("Настройки (%d): %s" % (len(m["settings"]), ", ".join(s["title"][len("Настройка: "):] for s in m["settings"]) or "нет"))
+    if m["missing"]:
+        print("Машина не сообщает (правило это пропустит): %s" % ", ".join(
+            sorted(re.sub(r"^(bsh_common|dishcare_dishwasher)_", "", k) for k in m["missing"])))
+    if m["unknown_events"]:
+        print("События машины, которых правило не знает (сообщите о них): %s" % ", ".join(m["unknown_events"]))
+    if a.keep_cfg:
+        print("Из %s перенесено: %s" % (a.keep_cfg, ", ".join(kept) or "ничего — значения совпадают с новыми"))
+        if added:
+            print("Новые параметры CFG (по умолчанию): %s" % ", ".join(added))
+        if gone:
+            print("Параметры старого правила, которых больше нет: %s" % ", ".join(gone))
     for w in m["warnings"]:
         print("Внимание: " + w)
     print("\nГотово:\n  %s\n  %s" % (rule_path, tpl_path))

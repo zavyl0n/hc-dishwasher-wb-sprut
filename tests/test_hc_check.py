@@ -107,9 +107,9 @@ class Frames(unittest.TestCase):
 class FakeAppliance(threading.Thread):
     """TLS-PSK сервер, отвечающий как посудомойка Home Connect."""
 
-    def __init__(self, psk):
+    def __init__(self, psk, silent=False):
         super().__init__(daemon=True)
-        self.psk = psk
+        self.psk, self.silent = psk, silent
         self.sock = socket.socket()
         self.sock.bind(("127.0.0.1", 0))
         self.sock.listen(1)
@@ -124,6 +124,10 @@ class FakeAppliance(threading.Thread):
         conn, _ = self.sock.accept()
         try:
             with ctx.wrap_socket(conn, server_side=True) as s:
+                if self.silent:              # рукопожатие прошло, а дальше прибор молчит
+                    while s.recv(1024):
+                        pass
+                    return
                 req = b""
                 while b"\r\n\r\n" not in req:
                     req += s.recv(1024)
@@ -142,15 +146,16 @@ class FakeAppliance(threading.Thread):
 class EndToEnd(unittest.TestCase):
     KEY = "dGVzdC1kaXNoMi1rZXk"     # ключ «Посудомойки» из other_model.json
 
-    def run_check(self, server_psk):
-        server = FakeAppliance(server_psk)
+    def run_check(self, server_psk, silent=False, timeout=5, devfile=FIXTURES / "other_model.json"):
+        server = FakeAppliance(server_psk, silent)
         server.start()
         real = socket.create_connection
         out = io.StringIO()
-        argv = ["hc_check.py", "127.0.0.1", str(FIXTURES / "other_model.json")]
+        t = timeout
+        argv = ["hc_check.py", "127.0.0.1", str(devfile)]
         with mock.patch.object(sys, "argv", argv), \
                 mock.patch.object(hc_check.socket, "create_connection",
-                                  lambda addr, timeout=None: real(("127.0.0.1", server.port), timeout=5)), \
+                                  lambda addr, timeout=None: real(("127.0.0.1", server.port), timeout=t)), \
                 contextlib.redirect_stdout(out):
             try:
                 hc_check.main()
@@ -170,6 +175,19 @@ class EndToEnd(unittest.TestCase):
     def test_wrong_key(self):
         code, out = self.run_check(b"some-other-key")
         self.assertIn("ключ не подходит", str(code))
+
+    def test_appliance_silent_after_handshake(self):
+        code, out = self.run_check(hc_check.b64url(self.KEY), silent=True, timeout=1)
+        self.assertIn("не ответил по WebSocket", str(code))
+        self.assertNotIn("Traceback", out)
+
+    def test_devices_json_with_bom(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            bom = Path(d) / "devices.json"
+            bom.write_bytes(b"\xef\xbb\xbf" + (FIXTURES / "other_model.json").read_bytes())
+            code, out = self.run_check(hc_check.b64url(self.KEY), devfile=bom)
+        self.assertEqual(code, 0, out)
 
 
 if __name__ == "__main__":

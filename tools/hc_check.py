@@ -85,7 +85,7 @@ def main():
         sys.exit(f"Нужен Python 3.13+ с поддержкой TLS-PSK. Сейчас: {sys.version.split()[0]}, "
                  f"HAS_PSK={getattr(ssl, 'HAS_PSK', None)}")
 
-    with open(devfile, encoding="utf-8") as f:
+    with open(devfile, encoding="utf-8-sig") as f:   # -sig: файл мог сохраниться с BOM
         data = json.load(f)
     dev = pick_device(data if isinstance(data, list) else [data], host)
     print(f"Прибор из devices.json: {dev.get('name')} (host {dev.get('host')})", flush=True)
@@ -111,8 +111,21 @@ def main():
         s = ctx.wrap_socket(raw, server_hostname=host)
     except ssl.SSLError as e:
         sys.exit(f"   НЕ УДАЛОСЬ: {e}\n   Скорее всего, ключ не подходит (прибор сбрасывали или переподключали).")
+    except OSError as e:     # таймаут или разрыв во время рукопожатия
+        sys.exit(f"   НЕ УДАЛОСЬ: {e or 'нет ответа'}\n   Прибор не завершил рукопожатие — проверьте IP и что это Home Connect.")
     print(f"   OK, шифр {s.cipher()[0]}", flush=True)
 
+    try:
+        websocket_hello(s, host)
+    except OSError as e:   # таймаут и разрыв соединения — тоже OSError
+        sys.exit(f"   НЕ УДАЛОСЬ: {e or 'нет ответа'}\n   Ключ подошёл, но прибор не ответил по WebSocket. "
+                 "Попробуйте ещё раз; если повторяется — перезапустите посудомойку.")
+    finally:
+        s.close()
+    print("\nКЛЮЧ РАБОТАЕТ: посудомойка отвечает по локальной сети.")
+
+
+def websocket_hello(s, host):
     print("3. WebSocket /homeconnect ...", flush=True)
     wskey = base64.b64encode(os.urandom(16)).decode()
     s.sendall((f"GET /homeconnect HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\n"
@@ -132,8 +145,6 @@ def main():
         print(json.dumps(json.loads(msg), ensure_ascii=False, indent=2))
     except ValueError:
         print(msg)
-    s.close()
-    print("\nКЛЮЧ РАБОТАЕТ: посудомойка отвечает по локальной сети.")
 
 
 if __name__ == "__main__":
