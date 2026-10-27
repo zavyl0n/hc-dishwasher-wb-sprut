@@ -30,6 +30,29 @@ jobs:
       - name: Установщик (shellcheck)
         run: shellcheck hcpy_wb7/install_hcpy.sh
 
+  # правило в настоящем Duktape — движке wb-rules (ES5)
+  duktape:
+    runs-on: ubuntu-24.04
+    env:
+      TZ: Europe/Moscow
+      DUKTAPE: "2.7.0"
+      DUKTAPE_SHA256: 90f8d2fa8b5567c6899830ddef2c03f3c27960b11aca222fa17aa7ac613c2890
+    steps:
+      - uses: actions/checkout@v4
+      - name: Сборка Duktape
+        run: |
+          curl -fsSL --retry 3 -o duktape.tar.xz \
+            "https://github.com/svaarala/duktape/releases/download/v$DUKTAPE/duktape-$DUKTAPE.tar.xz"
+          echo "$DUKTAPE_SHA256  duktape.tar.xz" | sha256sum -c -
+          tar xJf duktape.tar.xz
+          make -s -C "duktape-$DUKTAPE" -f Makefile.cmdline
+      - name: Правило в Duktape
+        run: |
+          for rule in rule/dishwasher.js examples/SMV4HVX31E/dishwasher.js; do
+            echo "== $rule"
+            "duktape-$DUKTAPE/duk" tests/duktape/harness.js "$rule" tests/duktape/smoke.js
+          done
+
   # make_kit.py обещает работу на старом системном Python контроллера
   generator-old-python:
     runs-on: ubuntu-22.04
