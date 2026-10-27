@@ -32,6 +32,7 @@ rule/dishwasher.js   правило wb-rules (исходник, блок «МО�
 tools/make_kit.py    генератор: devices.json → out/dishwasher.js + out/spruthub_dishwasher.json
 tools/hc_check.py    проверка ключа: отвечает ли машина по локальной сети (нужен Python 3.13+)
 examples/SMV4HVX31E/ готовый результат генератора для Bosch SMV4HVX31E
+tests/               тесты (для разработки, на WB не нужны)
 ```
 
 ## Установка
@@ -192,6 +193,30 @@ journalctl -u wb-rules -f | grep dishwasher       # что делает прав
 
 Быстрый живой тест: включите и выключите «Питание» в WB или Sprut.hub. Если переключатель
 остаётся в нужном положении дольше 15 секунд — связь с машиной в обе стороны работает.
+
+## Тесты
+
+Для разработки: проверяют правило, генератор и `hc_check.py` без машины, WB и Sprut.hub.
+Нужны Node.js 18+ и Python 3.9+ (сквозной тест `hc_check.py` — 3.13+).
+
+```bash
+npm install                                               # acorn для проверки синтаксиса ES5
+pip install --require-hashes -r hcpy_wb7/requirements-wb7.txt   # по желанию: тесты публикации hc2mqtt
+npm test
+```
+
+- `tests/rule.test.js` — правило в эмуляторе wb-rules (`tests/wbrules.js`): поддельное время,
+  только функции ES5 (как в Duktape), проверка типов контролов. Сценарии: отображение состояния,
+  команды, отказы, возврат контрола через 15 с, отложенный старт, уведомления, связь с hcpy.
+- `tests/test_hcpy_contract.py` — стык с hcpy: каждую команду правила проверяют валидаторы hcpy,
+  а формат значений hcpy — правило.
+- `tests/test_make_kit.py` — генератор: точное совпадение с `examples/`, модели без отложенного
+  старта и отмены, неизвестные программы и опции, отсутствие ключей в результате.
+- `tests/test_hc_check.py` — выбор прибора, разбор WebSocket и TLS-PSK с поддельной машиной.
+
+Фикстуры в `tests/fixtures` синтетические, ключи в них ненастоящие. Известные ошибки отмечены
+в тестах как `todo` / `expectedFailure` и не ломают прогон. После правки `rule/dishwasher.js`
+перегенерируйте пример: `python3 tools/make_kit.py tests/fixtures/smv4hvx31e.json --out examples/SMV4HVX31E`.
 
 ## Лицензия
 
