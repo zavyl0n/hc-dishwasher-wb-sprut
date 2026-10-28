@@ -3,6 +3,8 @@ name: install
 # Настоящая установка hcpy (uv, Python 3.13, пакеты) в чистом Debian под qemu —
 # как на Wiren Board 7 (armhf, 32 бит) и Wiren Board 8 (arm64, 64 бит). Нужен интернет,
 # поэтому запускается только при изменении установщика.
+# Образы buildpack-deps:*-curl — официальный Debian с curl: у Debian 11 закончилась поддержка,
+# и apt в чистом debian:bullseye уже не ставит пакеты (установщику apt не нужен).
 on:
   push:
     paths:
@@ -25,16 +27,16 @@ jobs:
         include:
           - name: "WB7: armhf, Debian 11"
             platform: linux/arm/v7
-            image: debian:bullseye
+            image: buildpack-deps:bullseye-curl
           - name: "WB8: arm64, Debian 11"
             platform: linux/arm64
-            image: debian:bullseye
+            image: buildpack-deps:bullseye-curl
           - name: "WB8: arm64, Debian 12"
             platform: linux/arm64
-            image: debian:bookworm
+            image: buildpack-deps:bookworm-curl
           - name: "ПК: amd64, Debian 12"
             platform: linux/amd64
-            image: debian:bookworm
+            image: buildpack-deps:bookworm-curl
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
