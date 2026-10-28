@@ -28,7 +28,7 @@ jobs:
       - name: Генератор, hc_check, стык с hcpy
         run: python -m unittest discover -s tests -v
       - name: Установщик (shellcheck)
-        run: shellcheck hcpy_wb7/install_hcpy.sh
+        run: shellcheck hcpy_wb7/install_hcpy.sh tests/real_install.sh
 
   # правило в настоящем Duktape — движке wb-rules (ES5)
   duktape:

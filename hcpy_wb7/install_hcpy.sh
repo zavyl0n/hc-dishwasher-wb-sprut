@@ -1,5 +1,5 @@
 #!/bin/bash
-# Мост Home Connect -> MQTT (hcpy) для Wiren Board 7.
+# Мост Home Connect -> MQTT (hcpy) для Wiren Board 7 (armhf, 32 бит) и Wiren Board 8 (arm64, 64 бит).
 # Всё ставится в /mnt/data/hcpy; системный Python и прошивка WB не затрагиваются.
 #
 #   bash install_hcpy.sh            установка или обновление + пробное подключение к посудомойке (30 с)
@@ -12,6 +12,7 @@
 #   MQTT_HOST             адрес брокера, по умолчанию 127.0.0.1
 #   HARDEN=0              запускать hcpy от root без ограничений systemd, как в прежних версиях
 #                         (выбор запоминается; HARDEN=1 вернёт ограничения)
+#   UV_TARGET, UV_SHA256  сборка uv и её SHA-256, если архитектура не определилась сама
 set -euo pipefail
 
 BASE=${BASE:-/mnt/data/hcpy}
@@ -20,8 +21,8 @@ PREFIX=homeconnect/
 HCPY_USER=${HCPY_USER:-hcpy}
 HARDEN=${HARDEN:-}
 UV_VERSION=0.11.32
-UV_TARGET=${UV_TARGET:-armv7-unknown-linux-gnueabihf}
-UV_SHA256=${UV_SHA256:-593e0f6b92cef908b23e3e3e0da2fd8ae24392afdb70eed05651869fea4a1b02}
+UV_TARGET=${UV_TARGET:-}
+UV_SHA256=${UV_SHA256:-}
 SRC=$(cd "$(dirname "$0")" && pwd)
 UNIT=${UNIT:-/etc/systemd/system/hcpy.service}
 INI=$BASE/config/hcpy.ini
@@ -29,6 +30,36 @@ USER_MARK=$BASE/config/.user-created
 HARDEN_FILE=$BASE/.harden
 
 say() { printf '\n== %s\n' "$*"; }
+
+# SHA-256 архивов uv $UV_VERSION (файлы .sha256 из релиза на GitHub)
+uv_sha256() {
+    case "$1" in
+    armv7-unknown-linux-gnueabihf) echo 593e0f6b92cef908b23e3e3e0da2fd8ae24392afdb70eed05651869fea4a1b02 ;;
+    aarch64-unknown-linux-gnu)     echo 4d4fa08d95b06642e5800df6a22bd71455f23f988269e18da2847971d8c0bf31 ;;
+    x86_64-unknown-linux-gnu)      echo aab924fd522efd06f1c5f3b93a243864fc453132c94b2dc49f1371b528a4b967 ;;
+    esac
+}
+
+# Сборка uv под контроллер. dpkg называет архитектуру системы (armhf бывает и на 64-битном ядре),
+# uname — запасной вариант без dpkg.
+pick_uv() {
+    local arch
+    arch=$(dpkg --print-architecture 2>/dev/null || uname -m)
+    if [ -z "$UV_TARGET" ]; then
+        case "$arch" in
+        armhf | armv7l) UV_TARGET=armv7-unknown-linux-gnueabihf ;;   # Wiren Board 7 и 6
+        arm64 | aarch64) UV_TARGET=aarch64-unknown-linux-gnu ;;      # Wiren Board 8
+        amd64 | x86_64) UV_TARGET=x86_64-unknown-linux-gnu ;;        # обычный ПК или виртуальная машина
+        *)
+            echo "Неизвестная архитектура $arch: задайте UV_TARGET и UV_SHA256 (релизы uv $UV_VERSION на GitHub)"
+            exit 1
+            ;;
+        esac
+    fi
+    UV_SHA256=${UV_SHA256:-$(uv_sha256 "$UV_TARGET")}
+    [ -n "$UV_SHA256" ] || { echo "Для $UV_TARGET нет контрольной суммы: задайте UV_SHA256"; exit 1; }
+    echo "архитектура $arch -> uv-$UV_TARGET"
+}
 fetch() {
     if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 -o "$2" "$1"; else wget -q -O "$2" "$1"; fi
 }
@@ -165,10 +196,11 @@ for f in "$SRC/devices.json" "$SRC/../devices.json" /tmp/devices.json; do
         break
     fi
 done
-[ -f config/devices.json ] || { echo "Нет devices.json: скопируйте его в /tmp на WB7 и запустите снова"; exit 1; }
+[ -f config/devices.json ] || { echo "Нет devices.json: скопируйте его в /tmp на WB и запустите снова"; exit 1; }
 sed -i '1s/^\xEF\xBB\xBF//' config/devices.json   # BOM от Блокнота Windows мешает hcpy
 
 say "1/5 uv $UV_VERSION"
+pick_uv
 if ! bin/uv --version 2>/dev/null | grep -q " $UV_VERSION"; then
     fetch "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$UV_TARGET.tar.gz" uv.tar.gz
     echo "$UV_SHA256  uv.tar.gz" | sha256sum -c -

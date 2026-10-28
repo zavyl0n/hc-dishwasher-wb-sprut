@@ -2,8 +2,9 @@
 
     python3 -m unittest discover -s tests
 
-Внешние команды (uv, curl, systemctl, useradd, userdel, id, chown, sleep, mosquitto_sub)
-подменены заглушками: каждая записывает свой вызов в журнал. Настоящие — bash, Python и
+Внешние команды (uv, curl, systemctl, useradd, userdel, id, chown, sleep, mosquitto_sub, dpkg)
+подменены заглушками: каждая записывает свой вызов в журнал; архитектуру «контроллера»
+задаёт STUB_ARCH (по умолчанию armhf, как у WB7). Настоящие — bash, Python и
 зависимости hcpy: venv создаётся тем Python, который запускает тесты (нужен 3.13+ с TLS-PSK
 и пакеты из hcpy_wb7/requirements-wb7.txt), иначе тесты пропускаются.
 """
@@ -52,6 +53,8 @@ STUBS = {
           'exec "%s" "$@"' % REAL_ID,
     "chown": 'echo "chown $*" >> "$STUB_LOG"',
     "sleep": "exit 0",
+    "dpkg": '[ "$1" = "--print-architecture" ] && [ "${STUB_ARCH:-armhf}" != none ] && { echo "${STUB_ARCH:-armhf}"; exit 0; }\n'
+            'exit 1',
     "mosquitto_sub": 'echo "mosquitto_sub $*" >> "$STUB_LOG"',
     "curl": 'echo "curl $*" >> "$STUB_LOG"\nout=""\n'
             'while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2;; *) shift;; esac; done\n'
@@ -232,6 +235,59 @@ class Installer(unittest.TestCase):
         self.assertIn("systemctl restart hcpy.service", self.calls())
         self.assertIn("User=hcpy", self.unit.read_text(encoding="utf-8"), "юнит обновлён")
         self.assertEqual(self.calls().count("uv venv"), before, "venv не пересоздаётся")
+
+    def test_uv_build_matches_architecture(self):
+        # без UV_SHA256 берётся вшитая сумма, и архив-заглушка её не проходит: так видно, что проверка
+        # идёт по сумме именно этой сборки
+        for arch, target in [("armhf", "armv7-unknown-linux-gnueabihf"),     # Wiren Board 7
+                             ("arm64", "aarch64-unknown-linux-gnu"),         # Wiren Board 8
+                             ("amd64", "x86_64-unknown-linux-gnu")]:
+            with self.subTest(arch):
+                self.put_devices()
+                base = self.tmp / ("base-" + arch)
+                r = self.run_sh(STUB_ARCH=arch, UV_SHA256="", BASE=str(base))
+                self.assertIn("архитектура %s -> uv-%s" % (arch, target), r.stdout)
+                self.assertIn("/0.11.32/uv-%s.tar.gz" % target, self.calls())
+                self.assertNotEqual(r.returncode, 0, "заглушка не совпадает с настоящей суммой")
+                self.assertIn("FAILED", r.stdout + r.stderr)
+                self.assertFalse((base / "bin" / "uv").exists())
+
+    def test_architecture_from_uname_without_dpkg(self):
+        self.put_devices()
+        r = self.run_sh(STUB_ARCH="none", UV_SHA256="")
+        machine = os.uname().machine
+        self.assertIn("архитектура %s -> uv-" % machine, r.stdout)
+
+    def test_unknown_architecture(self):
+        self.put_devices()
+        r = self.run_sh(STUB_ARCH="riscv64")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("Неизвестная архитектура riscv64: задайте UV_TARGET и UV_SHA256", r.stdout)
+        self.assertNotIn("curl", self.calls())
+        # с явными UV_TARGET и UV_SHA256 установка идёт дальше
+        self.put_devices()
+        r = self.run_sh(STUB_ARCH="riscv64", UV_TARGET="riscv64gc-unknown-linux-gnu")
+        self.assertEqual(r.returncode, 0, r.stdout[-1500:] + r.stderr[-1500:])
+        self.assertIn("/uv-riscv64gc-unknown-linux-gnu.tar.gz", self.calls())
+
+    def test_target_without_checksum(self):
+        self.put_devices()
+        r = self.run_sh(UV_TARGET="riscv64gc-unknown-linux-gnu", UV_SHA256="")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("нет контрольной суммы", r.stdout)
+
+    @unittest.skipIf(shutil.which("systemd-analyze") is None, "нет systemd-analyze")
+    def test_unit_passes_systemd_analyze(self):
+        self.install()
+        for harden in ("1", "0"):
+            with self.subTest(HARDEN=harden):
+                r = self.run_sh("--service", script=self.base / "install_hcpy.sh", HARDEN=harden)
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                v = subprocess.run(["systemd-analyze", "verify", str(self.unit)],
+                                   capture_output=True, text=True, timeout=60)
+                out = v.stdout + v.stderr
+                self.assertNotRegex(out, r"Unknown (key|lvalue|section)|Failed to parse|Invalid", out)
+                self.assertEqual(v.returncode, 0, out)
 
     def test_bad_devices_json(self):
         for raw, msg in [(b"{not json", "не читается как JSON"),

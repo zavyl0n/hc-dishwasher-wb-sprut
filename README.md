@@ -5,7 +5,7 @@
 вашей сети, облако Bosch и интернет для работы не нужны.
 
 ```
-Посудомойка ⇄ Wi-Fi ⇄ hcpy (на WB7) ⇄ MQTT ⇄ правило wb-rules ⇄ Sprut.hub (→ HomeKit / Алиса)
+Посудомойка ⇄ Wi-Fi ⇄ hcpy (на WB7 / WB8) ⇄ MQTT ⇄ правило wb-rules ⇄ Sprut.hub (→ HomeKit / Алиса)
 ```
 
 - **[hcpy](https://github.com/hcpy2-0/hcpy)** подключается к машине напрямую по локальной сети с её ключом и публикует всё в MQTT.
@@ -16,9 +16,15 @@
 Проверено на Bosch SMV4HVX31E + Wiren Board 7 + Sprut.hub 1.12. Другие модели поддерживаются
 через генератор, но на живых машинах не проверялись — пишите, что получилось.
 
+Подходит и для **Wiren Board 8**: установщик сам определяет архитектуру — 32-битный armhf (WB7, WB6)
+или 64-битный arm64 (WB8) — и берёт нужную сборку uv и Python. Правило и шаблон от архитектуры
+не зависят. Установка на arm64 проверяется в CI в чистом Debian под эмулятором; на живом WB8
+пока не проверялась — пишите, если пробовали.
+
 ## Что нужно
 
-- **Wiren Board 7** с доступом по SSH. На время установки hcpy нужен интернет на WB.
+- **Wiren Board 7 или 8** с доступом по SSH. На время установки hcpy нужен интернет на WB,
+  на `/mnt/data` — около 200 МБ.
 - **Посудомойка Bosch / Siemens / Neff с Home Connect**, один раз подключённая к Wi-Fi через приложение Home Connect.
 - **`devices.json`** — ключи доступа к вашей машине, получаются один раз через аккаунт Home Connect.
 - **Python 3.8+** на компьютере или на WB — для генератора.
@@ -27,7 +33,7 @@
 ## Состав
 
 ```
-hcpy_wb7/            установщик hcpy для WB7 (hcpy + небольшой патч, всё ставится в /mnt/data/hcpy)
+hcpy_wb7/            установщик hcpy для WB7 и WB8 (hcpy + небольшой патч, всё ставится в /mnt/data/hcpy)
 rule/dishwasher.js   правило wb-rules (исходник, блок «МОДЕЛЬ» заполняет генератор)
 tools/make_kit.py    генератор: devices.json → out/dishwasher.js + out/spruthub_dishwasher.json
 tools/hc_check.py    проверка ключа: отвечает ли машина по локальной сети (нужен Python 3.13+)
@@ -60,7 +66,7 @@ Home Connect — по инструкции hcpy (раздел
 python tools/hc_check.py 192.168.1.50 devices.json
 ```
 
-### 2. Установите hcpy на WB7
+### 2. Установите hcpy на WB
 
 Скопируйте на WB папку `hcpy_wb7` и `devices.json` (например, через `scp` или WinSCP):
 
@@ -259,6 +265,8 @@ npm test
 - `tests/test_hc_check.py` — выбор прибора, разбор WebSocket и TLS-PSK с поддельной машиной.
 - `tests/test_install.py` — установщик с заглушками вместо systemd, uv и т. п.: перенос и проверка
   `devices.json`, файл с паролем MQTT, юнит службы, обновление и удаление.
+- `tests/real_install.sh` — настоящая установка (uv, Python, пакеты) в чистом Debian; в CI — для armhf
+  (WB7) и arm64 (WB8) под qemu. Меняет систему, поэтому запускается только в контейнере.
 - `tests/duktape/` — короткий сценарий на чистом ES5. В CI он идёт в настоящем Duktape — движке wb-rules,
   локально `tests/duktape.test.js` гоняет его в Node.
 

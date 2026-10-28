@@ -1,0 +1,45 @@
+name: install
+
+# Настоящая установка hcpy (uv, Python 3.13, пакеты) в чистом Debian под qemu —
+# как на Wiren Board 7 (armhf, 32 бит) и Wiren Board 8 (arm64, 64 бит). Нужен интернет,
+# поэтому запускается только при изменении установщика.
+on:
+  push:
+    paths:
+      - "hcpy_wb7/**"
+      - "tests/real_install.sh"
+      - ".github/workflows/install.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "WB7: armhf, Debian 11"
+            platform: linux/arm/v7
+            image: debian:bullseye
+          - name: "WB8: arm64, Debian 11"
+            platform: linux/arm64
+            image: debian:bullseye
+          - name: "WB8: arm64, Debian 12"
+            platform: linux/arm64
+            image: debian:bookworm
+          - name: "ПК: amd64, Debian 12"
+            platform: linux/amd64
+            image: debian:bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - name: Установка, запуск от hcpy и удаление в контейнере
+        run: >-
+          docker run --rm --platform "${{ matrix.platform }}"
+          -v "$PWD:/kit:ro" "${{ matrix.image }}"
+          bash /kit/tests/real_install.sh
