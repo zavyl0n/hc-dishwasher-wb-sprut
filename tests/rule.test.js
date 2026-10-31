@@ -254,6 +254,24 @@ for (const file of ["rule/dishwasher.js", "examples/SMV4HVX31E/dishwasher.js"]) 
         assert.deepEqual(sets(e), [{ uid: UID.abort, value: true }]);
       });
 
+      it("ActionRequired сохраняет активную мойку и не считается новым стартом", () => {
+        const e = boot(file, { cfg: { tgToken: "123:TEST", tgChatId: "42" } });
+        op(e, "Run");
+        e.advance(3000);
+        op(e, "ActionRequired");
+        assert.equal(e.get("running"), true);
+        assert.equal(e.get("run"), true);
+        e.clear();
+        e.user("run", false);
+        assert.deepEqual(sets(e), [{ uid: UID.abort, value: true }]);
+        op(e, "Run");
+        e.advance(3000);
+        assert.ok(!e.telegram.some(t => /Мойка началась/.test(t)), "возврат из ActionRequired — не новый старт");
+        e.press("start");
+        assert.deepEqual(starts(e), []);
+        assert.match(e.last(), /уже запущена/);
+      });
+
       it("выбор программы → selectedProgram; во время мойки — отказ и возврат", () => {
         const e = boot(file);
         e.user("prog_quick65", true);
@@ -461,6 +479,14 @@ for (const file of ["rule/dishwasher.js", "examples/SMV4HVX31E/dishwasher.js"]) 
         op(e, "DelayedStart");
         e.advance(3000);
         assert.match(e.telegram[0], /Отложенный старт: Эко 50°, начнётся в 22:00, окончание ≈ 01:45 завтра/);
+      });
+
+      it("первое живое событие без предыдущего retained-значения уходит в Telegram", () => {
+        const e = load(path.join(ROOT, file), TG);
+        event(e, "bsh_common_event_aquastopoccured", "Present");
+        assert.equal(e.get("aquastop"), true);
+        assert.equal(e.telegram.length, 1);
+        assert.match(e.telegram[0], /AquaStop/);
       });
 
       it("событие Present → одно уведомление; retained при старте и повтор — без уведомления", () => {
