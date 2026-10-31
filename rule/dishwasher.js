@@ -237,7 +237,7 @@ function calcDelay(silent) {
 
 function startProgram() {
   if (dev[D + "/online"] !== true) { note("Старт невозможен: нет связи с машиной (hcpy)", true); return false; }
-  if (isRunning(hc.bsh_common_status_operationstate)) { note("Программа уже запущена"); return false; }
+  if (isBusy(hc.bsh_common_status_operationstate)) { note("Программа уже запущена"); return false; }
   var p = progByUid(dev[D + "/program"]);
   if (!p) { note("Старт невозможен: не выбрана программа"); return false; }
   var delay = calcDelay(false);
@@ -282,14 +282,14 @@ function startProgram() {
 }
 
 function abortProgram() {
-  if (!isRunning(hc.bsh_common_status_operationstate)) { note("Нечего отменять: программа не запущена"); return false; }
+  if (!isBusy(hc.bsh_common_status_operationstate)) { note("Нечего отменять: программа не запущена"); return false; }
   if (!UID.AbortProgram) { note("Отмена программы не поддерживается этой моделью — отмените на машине"); return false; }
   hcSet(UID.AbortProgram, true);
   note("Команда отмены программы");
 }
 
 function selectProgram(p) {
-  if (isRunning(hc.bsh_common_status_operationstate)) {
+  if (isBusy(hc.bsh_common_status_operationstate)) {
     note("Программу нельзя сменить во время мойки");
     return false;
   }
@@ -297,7 +297,7 @@ function selectProgram(p) {
 }
 
 function applyOption(o, val) {
-  if (isRunning(hc.bsh_common_status_operationstate)) {
+  if (isBusy(hc.bsh_common_status_operationstate)) {
     hcSet(o.uid, val);                       // изменение опции у идущей программы
     return;
   }
@@ -517,7 +517,7 @@ PROGRAMS.forEach(function (p) {
 
 // «Мойка»: включение — старт выбранной программы с опциями и отложенным стартом, выключение — отмена
 bind("run", "bsh_common_status_operationstate",
-  function (v) { return v === undefined ? null : isRunning(v); },
+  function (v) { return v === undefined ? null : isBusy(v); },
   function (val) { return val ? startProgram() : abortProgram(); });
 
 OPTIONS.forEach(function (o) {
@@ -559,11 +559,11 @@ defineRule("dishwasher_preview", {
 // ---------------------------------------------------------------------
 on("bsh_common_status_operationstate", function (v, prev, retained) {
   setCtrl("state", OPSTATE_RU[v] || String(v));
-  setCtrl("running", isRunning(v));
+  setCtrl("running", isBusy(v));
   updateTimes();
   if (retained || prev === undefined || prev === v) return;
   if (isRunning(v)) setCtrl("finished", false);
-  if (isRunning(v) && !isRunning(prev) && CFG.resetDelayOnStart && UID.StartInRelative) {
+  if (isBusy(v) && !isBusy(prev) && CFG.resetDelayOnStart && UID.StartInRelative) {
     // отложенный старт задаётся на один запуск: следующий старт (например, плиткой в Sprut.hub) — сразу
     setCtrl("delay_h", 0);
     setCtrl("finish_at", "");
@@ -572,7 +572,7 @@ on("bsh_common_status_operationstate", function (v, prev, retained) {
   var p = progByKey(hc.bsh_common_root_activeprogram) || progByKey(hc.bsh_common_root_selectedprogram);
   var name = p ? p.title : "";
 
-  if (v === "Run" && prev !== "Pause") {
+  if (v === "Run" && !isBusy(prev)) {
     setTimeout(function () {   // дождаться актуального оставшегося времени
       note("▶ Мойка началась: " + name + ", окончание ≈ " +
            fmtClock(Date.now() + toInt(hc.bsh_common_option_remainingprogramtime) * 1000), CFG.notifyStart);
@@ -654,7 +654,7 @@ trackMqtt(CFG.base + "/event/+", function (msg) {
   ev[key] = t;
   recomputeFlags();
   var def = EVENTS[key];
-  if (def && def.notify && !msg.retained && prev !== undefined && prev !== t && t === "Present") {
+  if (def && def.notify && !msg.retained && prev !== t && t === "Present") {
     note(def.notify, true);
   }
 });

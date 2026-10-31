@@ -11,6 +11,7 @@ import contextlib
 import copy
 import io
 import json
+import os
 import re
 import subprocess
 import sys
@@ -46,8 +47,9 @@ def build(dev):
 
 
 def run_cli(*args):
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
     return subprocess.run([sys.executable, str(TOOLS / "make_kit.py")] + [str(a) for a in args],
-                          capture_output=True, text=True, encoding="utf-8")
+                          capture_output=True, text=True, encoding="utf-8", env=env)
 
 
 def rule_cells(rule_src, model):
