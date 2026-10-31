@@ -572,7 +572,7 @@ on("bsh_common_status_operationstate", function (v, prev, retained) {
   var p = progByKey(hc.bsh_common_root_activeprogram) || progByKey(hc.bsh_common_root_selectedprogram);
   var name = p ? p.title : "";
 
-  if (v === "Run" && !isBusy(prev)) {
+  if (v === "Run" && prev !== "Pause" && prev !== "ActionRequired") {
     setTimeout(function () {   // дождаться актуального оставшегося времени
       note("▶ Мойка началась: " + name + ", окончание ≈ " +
            fmtClock(Date.now() + toInt(hc.bsh_common_option_remainingprogramtime) * 1000), CFG.notifyStart);
