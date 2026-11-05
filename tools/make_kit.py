@@ -242,13 +242,13 @@ def build_model(dev):
         settings.append(s)
 
     # что из нужного правилу у машины есть
-    names = set(feats)
+    names = {name for name, (_, feature) in feats.items() if available(feature)}
     for name, what in REQUIRED:
         if name not in names:
             warnings.append("нет %s: %s" % (name, what))
     has = {"door": "BSH.Common.Status.DoorState" in names,
            "remoteStart": "BSH.Common.Status.RemoteControlStartAllowed" in names}
-    model_keys = {topic_key(n) for n, (_, f) in feats.items() if available(f)}
+    model_keys = {topic_key(name) for name in names}
     known = rule_known_keys()
     missing = sorted(known - model_keys - NOT_FEATURES - {topic_key(n) for n, _ in REQUIRED})
     unknown_events = sorted(n for n, (_, f) in feats.items()
@@ -265,6 +265,7 @@ def build_model(dev):
         "brand": str(desc.get("brand", "Bosch")).title(),
         "model": desc.get("model") or "unknown",
         "uids": uids, "delay_max": delay_max, "delay_step": delay_step, "has": has,
+        "features": names,
         "programs": programs, "options": options, "settings": settings,
         "warnings": warnings, "missing": missing, "unknown_events": unknown_events,
     }
@@ -430,6 +431,12 @@ def short(title):
 
 def build_template(m):
     level_map = {"FILTER_OK": "100", "CHANGE_FILTER": "0;10"}
+    features = m["features"]
+    dish_event = "Dishcare.Dishwasher.Event."
+
+    def has_event(*names):
+        return any(dish_event + name in features for name in names)
+
     services = [
         svc("Мойка", "Valve", [
             ch("Active", "run", writable_=True),
@@ -455,26 +462,36 @@ def build_template(m):
         opt_str("Осталось", "remaining"),
         opt_str("Старт через", "start_in"),
         opt_str("Окончание", "end_time"),
-        svc("Дверь", "ContactSensor", [ch("ContactSensorState", "door_open")]),
-        svc("Мойка завершена", "OccupancySensor", [ch("OccupancyDetected", "finished")]),
-        svc("AquaStop", "LeakSensor", [ch("LeakDetected", "aquastop")]),
-        opt_str("Аварии", "alarm_text"),
-        svc("Соль", "FilterMaintenance", [
+    ]
+    if m["has"]["door"]:
+        services.append(svc("Дверь", "ContactSensor", [ch("ContactSensorState", "door_open")]))
+    services.append(svc("Мойка завершена", "OccupancySensor", [ch("OccupancyDetected", "finished")]))
+    if "BSH.Common.Event.AquaStopOccured" in features:
+        services.append(svc("AquaStop", "LeakSensor", [ch("LeakDetected", "aquastop")]))
+    services.append(opt_str("Аварии", "alarm_text"))
+    if has_event("SaltLack", "SaltNearlyEmpty"):
+        services.append(svc("Соль", "FilterMaintenance", [
             ch("FilterChangeIndication", "salt_level", mp=level_map),
             ch("FilterLifeLevel", "salt_level"),
-        ]),
-        svc("Ополаскиватель", "FilterMaintenance", [
+        ]))
+    if has_event("RinseAidLack", "RinseAidNearlyEmpty"):
+        services.append(svc("Ополаскиватель", "FilterMaintenance", [
             ch("FilterChangeIndication", "rinse_level", mp=level_map),
             ch("FilterLifeLevel", "rinse_level"),
-        ]),
-        svc("Уход за машиной", "FilterMaintenance", [ch("FilterChangeIndication", "care_needed")]),
-        svc("Фильтр", "FilterMaintenance", [ch("FilterChangeIndication", "filter_check")]),
-        opt_int("Циклов до ухода за машиной", "care_runs"),
+        ]))
+    if has_event("MachineCareReminder", "MachineCareAndFilterCleaningReminder"):
+        services.append(svc("Уход за машиной", "FilterMaintenance", [ch("FilterChangeIndication", "care_needed")]))
+    if has_event("CheckFilterSystem", "SmartFilterCleaningReminder"):
+        services.append(svc("Фильтр", "FilterMaintenance", [ch("FilterChangeIndication", "filter_check")]))
+    if "Dishcare.Dishwasher.Status.MachineCareReminder.RemainingProgramRuns" in features:
+        services.append(opt_int("Циклов до ухода за машиной", "care_runs"))
+    services += [
         opt_str("Последнее событие", "last_message"),
         opt_str("Последняя мойка", "finished_at"),
         opt_bool("Связь с машиной", "online"),
-        opt_bool("Удалённый старт разрешён", "remote_start"),
     ]
+    if m["has"]["remoteStart"]:
+        services.append(opt_bool("Удалённый старт разрешён", "remote_start"))
     # настройки машины — скрыты с рабочего стола
     for s in m["settings"]:
         if s["kind"] == "bool":

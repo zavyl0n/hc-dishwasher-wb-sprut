@@ -15,6 +15,8 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "hcpy_wb7" / "app"
@@ -79,6 +81,36 @@ class ParseValues(unittest.TestCase):
             self.assertEqual(make_kit.clean_name(name), utils.clean_international_text(name), name)
 
 
+class ApplianceReadiness(unittest.TestCase):
+    def test_ready_only_after_delivering_successful_mandatory_values(self):
+        ws = Mock()
+        device = HCDevice(ws, fixture())
+        calls = []
+        door = "BSH.Common.Status.DoorState"
+
+        def exercise(on_message, on_open, on_close, on_error):
+            on_open(ws)
+            for reply in (
+                {"resource": "/ro/values", "action": "NOTIFY", "data": [{"uid": 1527, "value": 0}]},
+                {"resource": "/ro/allMandatoryValues", "action": "RESPONSE", "code": 404},
+                {"resource": "/ro/allMandatoryValues", "action": "RESPONSE", "data": [{"uid": 1527, "value": 1}]},
+                {"resource": "/ro/allMandatoryValues", "action": "RESPONSE", "data": [{"uid": 1527, "value": 1}]},
+            ):
+                on_message(ws, json.dumps(dict(reply, version=1)))
+            on_close(ws, None, None)
+
+        ws.run_forever.side_effect = exercise
+        device.run_forever(
+            on_message=lambda state: calls.append(state.get(door)),
+            on_open=lambda ws: calls.append("socket open"),
+            on_close=lambda ws, code, message: calls.append("socket closed"),
+            on_ready=lambda: calls.append("ready"),
+        )
+        self.assertEqual(calls, ["socket open", "Open", None, "Closed", "ready", "Closed", "socket closed"])
+        self.assertFalse(device.ready)
+        self.assertFalse(device.connected)
+
+
 @unittest.skipIf(shutil.which("node") is None, "нужен node")
 class RuleCommandsAcceptedByHcpy(unittest.TestCase):
     """Каждая команда правила (из эмулятора wb-rules) проходит проверки hcpy без исключений."""
@@ -129,24 +161,49 @@ class RuleCommandsAcceptedByHcpy(unittest.TestCase):
 
 class _Client:
     def __init__(self):
+        self.connected = True
         self.published = []
+        self.subscribed = []
+        self.fail_topic = None
 
     def is_connected(self):
-        return True
+        return self.connected
 
     def publish(self, topic, payload, retain=False, qos=0):
+        if not self.connected or self.fail_topic == topic:
+            return SimpleNamespace(rc=hc2mqtt.mqtt.MQTT_ERR_NO_CONN)
         self.published.append((topic, payload, retain))
+        return SimpleNamespace(rc=hc2mqtt.mqtt.MQTT_ERR_SUCCESS)
+
+    def subscribe(self, topic):
+        self.subscribed.append(topic)
+        return hc2mqtt.mqtt.MQTT_ERR_SUCCESS, len(self.subscribed)
 
 
 @unittest.skipIf(hc2mqtt is None, "нет зависимостей hcpy (pip install -r hcpy_wb7/requirements-wb7.txt)")
 class Hc2mqttPublishing(unittest.TestCase):
     """Топики и формат, в которых hc2mqtt публикует состояние и события."""
 
+    def setUp(self):
+        self.client = _Client()
+        self.bridge = hc2mqtt.MQTTBridge(self.client, "homeconnect/", [fixture()])
+        self.channel = self.bridge.channels[0]
+        self.device = make_device()
+        self.device.connected = True
+        self.device.get = Mock()
+        self.channel.attach(self.device)
+        self.bridge.on_connect(self.client, None, None, 0)
+
     def publish(self, msg):
-        dev, client = make_device(), _Client()
-        with contextlib.redirect_stdout(io.StringIO()):
-            hc2mqtt.handle_device_message(msg, dev, {}, client, "homeconnect/dishwasher", "dishwasher")
-        return {t: p for t, p, _ in client.published}, client
+        self.channel.mark_ready(self.device)
+        self.client.published.clear()
+        self.channel.receive(self.device, msg)
+        return {t: p for t, p, _ in self.client.published}, self.client
+
+    def command(self, payload, *, retain=False, topic="homeconnect/dishwasher/activeProgram"):
+        message = SimpleNamespace(topic=topic, payload=payload, retain=retain)
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.bridge.on_message(self.client, None, message)
 
     def test_state_topics_and_payloads(self):
         pub, client = self.publish({
@@ -168,12 +225,95 @@ class Hc2mqttPublishing(unittest.TestCase):
                          {"event_type": "Present"})
 
     def test_unchanged_values_not_republished(self):
-        dev, client, published = make_device(), _Client(), {}
-        with contextlib.redirect_stdout(io.StringIO()):
-            for _ in range(2):
-                hc2mqtt.handle_device_message({"BSH.Common.Status.DoorState": "Closed"}, dev, published,
-                                              client, "homeconnect/dishwasher", "dishwasher")
-        self.assertEqual(len(client.published), 1)
+        self.publish({"BSH.Common.Status.DoorState": "Closed"})
+        self.channel.receive(self.device, {"BSH.Common.Status.DoorState": "Closed"})
+        self.assertEqual(len(self.client.published), 1)
+
+    def test_reconnect_restores_latest_state_lwt_and_alarm(self):
+        door = "BSH.Common.Status.DoorState"
+        alarm = "BSH.Common.Event.AquaStopOccured"
+        self.publish({door: "Closed", alarm: "Off", "swVersion": "1.2"})
+        self.client.connected = False
+        self.bridge.on_disconnect(self.client, None, 1)
+        self.client.published.clear()
+        self.channel.receive(self.device, {door: "Open", alarm: "Present"})
+        self.assertEqual(self.client.published, [])
+
+        self.client.connected = True
+        self.bridge.on_connect(self.client, None, None, 0)
+        sent = self.client.published
+        self.assertEqual(sent[0], ("homeconnect/LWT", "offline", True))
+        self.assertEqual(sent[1], ("homeconnect/dishwasher/LWT", "offline", True))
+        self.assertIn(("homeconnect/dishwasher/state/bsh_common_status_doorstate", "Open", True), sent)
+        self.assertIn(("homeconnect/dishwasher/state/swversion", "1.2", True), sent)
+        self.assertIn(("homeconnect/dishwasher/event/bsh_common_event_aquastopoccured",
+                       '{"event_type": "Present"}', True), sent)
+        self.assertEqual(sent[-2], ("homeconnect/dishwasher/LWT", "online", True))
+        self.assertEqual(sent[-1], ("homeconnect/LWT", "online", True))
+
+    def test_next_appliance_session_clears_stale_state_and_announces_ready_after_snapshot(self):
+        door = "BSH.Common.Status.DoorState"
+        power = "BSH.Common.Setting.PowerState"
+        self.publish({door: "Closed"})
+        self.client.published.clear()
+        self.channel.detach(self.device)
+        self.channel.mark_ready(self.device)
+        replacement = make_device()
+        self.channel.attach(replacement)
+        self.channel.receive(replacement, {power: "On"})
+        self.channel.mark_ready(replacement)
+        sent = self.client.published
+        self.assertEqual(sent[0], ("homeconnect/dishwasher/LWT", "offline", True))
+        self.assertIn(("homeconnect/dishwasher/state/bsh_common_status_doorstate", "", True), sent)
+        self.assertNotIn(("homeconnect/dishwasher/LWT", "online", True), sent)
+        self.assertNotIn(("homeconnect/dishwasher/state/bsh_common_setting_powerstate", "On", True), sent)
+        replacement.connected = True
+        self.channel.mark_ready(replacement)
+        self.assertEqual(sent[-2], ("homeconnect/dishwasher/state/bsh_common_setting_powerstate", "On", True))
+        self.assertEqual(sent[-1], ("homeconnect/dishwasher/LWT", "online", True))
+
+    def test_failed_publish_is_not_considered_synced(self):
+        self.client.published.clear()
+        topic = "homeconnect/dishwasher/state/bsh_common_status_doorstate"
+        self.client.fail_topic = topic
+        self.channel.receive(self.device, {"BSH.Common.Status.DoorState": "Open"})
+        self.channel.mark_ready(self.device)
+        self.assertEqual(self.client.published, [])
+        self.command(b'{"program":8196}')
+        self.device.get.assert_not_called()
+        self.client.fail_topic = None
+        self.channel.receive(self.device, {"BSH.Common.Status.DoorState": "Open"})
+        self.assertEqual(self.client.published, [
+            (topic, "Open", True), ("homeconnect/dishwasher/LWT", "online", True),
+        ])
+
+    def test_initializing_and_retained_commands_are_ignored(self):
+        valid = b'{"program":8196}'
+        self.command(valid)
+        self.channel.mark_ready(self.device)
+        self.bridge.on_connect(self.client, None, None, 0)
+        self.assertIn("homeconnect/dishwasher/activeProgram", self.client.subscribed)
+        self.command(valid, retain=True)
+        self.command(valid, topic="other/dishwasher/activeProgram")
+        self.device.get.assert_not_called()
+        self.command(valid)
+        self.device.get.assert_called_once_with("/ro/activeProgram", 1, "POST", {"program": 8196})
+
+    def test_malformed_commands_do_not_stop_bridge(self):
+        self.channel.mark_ready(self.device)
+        for invalid in (
+            b"\xff", b"{", b"null", b"[]", b"[5]", b"{}", b'{"program":NaN}',
+            b'{"program":8196,"options":[{"uid":558}]}',
+            b'{"program":8196,"options":[{"uid":558,"value":1e999}]}',
+            b" " * (hc2mqtt.MAX_COMMAND_BYTES + 1),
+        ):
+            self.command(invalid)
+        invalid_topic = hc2mqtt.mqtt.MQTTMessage(topic=b"\xff")
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.bridge.on_message(self.client, None, invalid_topic)
+        self.device.get.assert_not_called()
+        self.command(b'[{"uid":539,"value":"On"}]', topic="homeconnect/dishwasher/set")
+        self.device.get.assert_called_once_with("/ro/values", 1, "POST", [{"uid": 539, "value": "On"}])
 
 
 if __name__ == "__main__":

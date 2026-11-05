@@ -63,9 +63,12 @@ class HCDevice:
         self.device_id = "0badcafe"
         self.debug = debug
         self._services_event = threading.Event()
+        self._initial_values_event = threading.Event()
         self.services = {}
         self.token = None
         self.connected = False
+        self.ready = False
+        self._send_lock = threading.Lock()
         self.state_lock = threading.Lock()
         self.state = {}
         self.set_init_feature_values()
@@ -345,7 +348,7 @@ class HCDevice:
 
         msg = {
             "sID": self.session_id,
-            "msgID": self.tx_msg_id,
+            "msgID": None,
             "resource": resource,
             "version": version,
             "action": action,
@@ -369,13 +372,16 @@ class HCDevice:
 
             msg["data"] = data
 
-        try:
-            if self.debug:
-                self.print(f"TX: {msg}")
-            self.ws.send(msg)
-        except Exception as e:
-            print(self.name, "Failed to send", e, msg, traceback.format_exc())
-        self.tx_msg_id += 1
+        # Session initialization and MQTT commands can send from different threads.
+        with self._send_lock:
+            msg["msgID"] = self.tx_msg_id
+            self.tx_msg_id += 1
+            try:
+                if self.debug:
+                    self.print(f"TX: {msg}")
+                self.ws.send(msg)
+            except Exception as e:
+                print(self.name, "Failed to send", e, msg, traceback.format_exc())
 
     def reconnect(self):
         # Receive initialization message /ei/initialValues
@@ -407,6 +413,9 @@ class HCDevice:
 
         self.get("/ro/allMandatoryValues")
         self.get("/ro/allDescriptionChanges")
+        if not self._initial_values_event.wait(timeout=10) and self.connected:
+            self.print("timeout waiting for /ro/allMandatoryValues, closing connection")
+            self.ws.close()
 
     def handle_message(self, buf):
         msg = json.loads(buf)
@@ -499,6 +508,9 @@ class HCDevice:
             elif resource == "/ro/allMandatoryValues" or resource == "/ro/values":
                 if "data" in msg:
                     values = self.parse_values(msg["data"])
+                    if resource == "/ro/allMandatoryValues" and action == "RESPONSE":
+                        self.ready = True
+                        self._initial_values_event.set()
                 else:
                     if self.debug:
                         self.print(f"received {msg}")
@@ -539,16 +551,22 @@ class HCDevice:
         # return whatever we've parsed out of it
         return values
 
-    def run_forever(self, on_message, on_open, on_close):
+    def run_forever(self, on_message, on_open, on_close, on_ready=None):
         def _on_message(ws, message):
+            was_ready = self.ready
             values = self.handle_message(message)
             on_message(values)
+            if on_ready is not None and self.connected and self.ready and not was_ready:
+                on_ready()
 
         def _on_open(ws):
+            self._initial_values_event.clear()
+            self.ready = False
             self.connected = True
             on_open(ws)
 
         def _on_close(ws, code, message):
+            self.ready = False
             self.connected = False
             on_close(ws, code, message)
 

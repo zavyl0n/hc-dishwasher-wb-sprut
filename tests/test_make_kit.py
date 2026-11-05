@@ -168,6 +168,17 @@ class BuildModel(unittest.TestCase):
         rule = make_kit.build_rule(m)
         self.assertIn("var HAS = { door: false, remoteStart: false };", rule)
 
+    def test_unavailable_statuses_warn_and_are_not_used_for_start_checks(self):
+        dev = smv()
+        names = {"BSH.Common.Status.DoorState", "BSH.Common.Status.RemoteControlStartAllowed"}
+        for feature in dev["features"].values():
+            if feature.get("name") in names:
+                feature["available"] = False
+        model = build(dev)
+        self.assertEqual(model["has"], {"door": False, "remoteStart": False})
+        for name in names:
+            self.assertTrue(any(name in warning for warning in model["warnings"]))
+
     def test_without_active_program_warns(self):
         dev = smv()
         dev["features"] = {k: v for k, v in dev["features"].items() if v["name"] != "BSH.Common.Root.ActiveProgram"}
@@ -335,6 +346,21 @@ class Template(unittest.TestCase):
         self.assertEqual((valve["name"], valve["type"]), ("Мойка", "Valve"))
         active = [c for c in valve["characteristics"] if c["type"] == "Active"][0]
         self.assertEqual(active["link"][0]["topicSet"], "/devices/(1)/controls/run/on")
+
+    def test_sensor_services_require_available_telemetry(self):
+        _, full = self.check_links(smv())
+        _, limited = self.check_links(other())
+        sensor_names = {"Дверь", "AquaStop", "Соль", "Ополаскиватель", "Уход за машиной",
+                        "Фильтр", "Циклов до ухода за машиной", "Удалённый старт разрешён"}
+        self.assertTrue(sensor_names <= {service["name"] for service in full["services"]})
+        self.assertFalse(sensor_names & {service["name"] for service in limited["services"]})
+
+        dev = smv()
+        for feature in dev["features"].values():
+            if feature.get("name") == "BSH.Common.Event.AquaStopOccured":
+                feature["available"] = "false"
+        _, unavailable = self.check_links(dev)
+        self.assertNotIn("AquaStop", {service["name"] for service in unavailable["services"]})
 
     def test_settings_are_hidden(self):
         _, tpl = self.check_links(smv())

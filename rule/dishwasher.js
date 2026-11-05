@@ -130,14 +130,18 @@ var ev = {};        // последние значения event/* (Off / Presen
 var learnedDur = {}; // реальная длительность программ, которую сообщила машина
 var handlers = {};  // key state/* -> [функции]
 var unloadTimer = null;
+var pendingStart = null;
+var link = { bridge: null, device: null, epoch: 0 };
 
 function on(key, fn) { (handlers[key] = handlers[key] || []).push(fn); }
 function isTrue(v) { return v === true || v === 1 || v === "True" || v === "true" || v === "1"; }
 function toInt(v) { var n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
 function pad2(n) { return (n < 10 ? "0" : "") + n; }
 function isRunning(st) { return st === "Run" || st === "Pause" || st === "DelayedStart"; }
-// ActionRequired бывает посреди программы (например, открыли дверь) — выключать питание нельзя
-function isBusy(st) { return isRunning(st) || st === "ActionRequired"; }
+// ActionRequired и Aborting могут требовать работы машины, например слива воды.
+function isBusy(st) { return isRunning(st) || st === "ActionRequired" || st === "Aborting"; }
+function isIdle(st) { return st === "Ready" || st === "Finished" || st === "Inactive"; }
+function isOnline() { return link.bridge === true && link.device === true; }
 
 function progByKey(k) {
   for (var i = 0; i < PROGRAMS.length; i++) if (PROGRAMS[i].key === k) return PROGRAMS[i];
@@ -180,17 +184,37 @@ function note(text, push) {
 //  Команды в hcpy
 // ---------------------------------------------------------------------
 function cmd(topic, payload) {
+  if (!isOnline()) { note("Команда не отправлена: нет связи с машиной"); return false; }
   var s = JSON.stringify(payload);
   log.info("[dishwasher] -> " + topic + " " + s);
   publish(CFG.base + "/" + topic, s);
+  return true;
 }
-function hcSet(uid, value) { cmd("set", { uid: uid, value: value }); }
+function hcSet(uid, value) { return cmd("set", { uid: uid, value: value }); }
 
-// Включить машину (если выключена) и затем выполнить fn
-function withPower(fn) {
-  if (hc.bsh_common_setting_powerstate === "On") { fn(); return; }
-  hcSet(UID.PowerState, "On");
-  setTimeout(fn, CFG.powerOnDelayMs);
+// После включения ждём обновления состояния и продолжаем только при подтверждённом питании.
+function withPower(fn, onFailure) {
+  if (hc.bsh_common_setting_powerstate === "On") return fn();
+  if (hc.bsh_common_setting_powerstate !== "Off" && hc.bsh_common_setting_powerstate !== "Standby") {
+    note("Нет данных о питании машины");
+    return false;
+  }
+  if (!hcSet(UID.PowerState, "On")) return false;
+  var epoch = link.epoch;
+  return setTimeout(function () {
+    if (epoch !== link.epoch) return;
+    if (hc.bsh_common_setting_powerstate === "On") { fn(); return; }
+    note("Машина не подтвердила включение питания");
+    if (onFailure) onFailure();
+  }, CFG.powerOnDelayMs);
+}
+
+function resetPendingStart() {
+  if (pendingStart === null) return false;
+  clearTimeout(pendingStart);
+  pendingStart = null;
+  setCtrl("run", isBusy(hc.bsh_common_status_operationstate));
+  return true;
 }
 
 function programDuration(p) {
@@ -236,8 +260,11 @@ function calcDelay(silent) {
 }
 
 function startProgram() {
-  if (dev[D + "/online"] !== true) { note("Старт невозможен: нет связи с машиной (hcpy)", true); return false; }
-  if (isBusy(hc.bsh_common_status_operationstate)) { note("Программа уже запущена"); return false; }
+  if (pendingStart !== null) return;
+  if (!isOnline()) { note("Старт невозможен: нет связи с машиной (hcpy)", true); return false; }
+  var st = hc.bsh_common_status_operationstate;
+  if (isBusy(st)) { note("Программа уже запущена или отменяется"); return false; }
+  if (!isIdle(st)) { note("Старт невозможен: нет подтверждения готовности машины"); return false; }
   var p = progByUid(dev[D + "/program"]);
   if (!p) { note("Старт невозможен: не выбрана программа"); return false; }
   var delay = calcDelay(false);
@@ -263,28 +290,43 @@ function startProgram() {
   if (opts.length) payload.options = opts;
 
   function blocked() {
-    if (HAS.door && hc.bsh_common_status_doorstate === "Open") return "дверь открыта";
+    if (!isOnline()) return "нет связи с машиной";
+    var st = hc.bsh_common_status_operationstate;
+    if (st !== "Ready" && st !== "Finished") return "машина не готова";
+    var door = hc.bsh_common_status_doorstate;
+    if (HAS.door && door !== "Closed" && door !== "Locked") {
+      return door === "Open" ? "дверь открыта" : "нет подтверждения, что дверь закрыта";
+    }
     if (HAS.remoteStart && !isTrue(hc.bsh_common_status_remotecontrolstartallowed)) {
       return "удалённый старт не разрешён — нажмите Remote Start на машине";
     }
     return "";
   }
-  // машина уже включена — проверяем сразу, чтобы кнопка в Sprut.hub/WB сразу вернулась назад
-  if (hc.bsh_common_setting_powerstate === "On" && blocked()) {
-    note("Старт отменён: " + blocked(), true);
-    return false;
-  }
-  withPower(function () {
-    if (blocked()) { note("Старт отменён: " + blocked(), true); return; }
-    cmd("activeProgram", payload);
+  function dispatch() {
+    var reason = blocked();
+    if (reason) { note("Старт отменён: " + reason, true); return false; }
+    if (!cmd("activeProgram", payload)) return false;
     note("Команда старта: " + p.title + (delay > 0 ? ", отложенный на " + fmtDur(delay) : "") + late);
-  });
+    return true;
+  }
+
+  if (hc.bsh_common_setting_powerstate === "On") return dispatch();
+  var timer = withPower(function () {
+    dispatch();
+    resetPendingStart();
+  }, resetPendingStart);
+  if (timer === false) return false;
+  pendingStart = timer;
+  setCtrl("run", true);
 }
 
 function abortProgram() {
-  if (!isBusy(hc.bsh_common_status_operationstate)) { note("Нечего отменять: программа не запущена"); return false; }
+  if (resetPendingStart()) { note("Старт отменён пользователем"); return; }
+  var st = hc.bsh_common_status_operationstate;
+  if (st === "Aborting") { note("Машина уже отменяет программу"); return false; }
+  if (!isBusy(st)) { note("Нечего отменять: программа не запущена"); return false; }
   if (!UID.AbortProgram) { note("Отмена программы не поддерживается этой моделью — отмените на машине"); return false; }
-  hcSet(UID.AbortProgram, true);
+  if (!hcSet(UID.AbortProgram, true)) return false;
   note("Команда отмены программы");
 }
 
@@ -293,18 +335,23 @@ function selectProgram(p) {
     note("Программу нельзя сменить во время мойки");
     return false;
   }
-  withPower(function () { cmd("selectedProgram", { program: p.uid }); });
+  if (!isIdle(hc.bsh_common_status_operationstate)) return false;
+  return withPower(function () {
+    if (!isIdle(hc.bsh_common_status_operationstate)) return false;
+    return cmd("selectedProgram", { program: p.uid });
+  });
 }
 
 function applyOption(o, val) {
-  if (isBusy(hc.bsh_common_status_operationstate)) {
-    hcSet(o.uid, val);                       // изменение опции у идущей программы
-    return;
-  }
+  var st = hc.bsh_common_status_operationstate;
+  if (st === "Aborting") return false;
+  if (isBusy(st)) return hcSet(o.uid, val);    // изменение опции у идущей программы
+  if (!isIdle(st)) return false;
   var p = progByUid(dev[D + "/program"]) || progByKey(hc.bsh_common_root_selectedprogram);
   if (!p) { note("Сначала выберите программу"); return false; }
-  withPower(function () {
-    cmd("selectedProgram", { program: p.uid, options: [{ uid: o.uid, value: val }] });
+  return withPower(function () {
+    if (!isIdle(hc.bsh_common_status_operationstate)) return false;
+    return cmd("selectedProgram", { program: p.uid, options: [{ uid: o.uid, value: val }] });
   });
 }
 
@@ -382,9 +429,9 @@ PROGRAMS.forEach(function (p) {
   p.ctrl = "prog_" + p.key.toLowerCase();    // отдельный выключатель программы (для Sprut.hub / HomeKit / Алисы)
 });
 
-c("online",          { title: "Связь с машиной",          type: "switch", value: false, readonly: true });
+c("online",          { title: "Связь с машиной",          type: "switch", value: false, forceDefault: true, readonly: true });
 c("power",           { title: "Питание",                  type: "switch", value: false });
-c("run",             { title: "Мойка (вкл — старт, выкл — отмена)", type: "switch", value: false });
+c("run",             { title: "Мойка (вкл — старт, выкл — отмена)", type: "switch", value: false, forceDefault: true });
 c("state",           { title: "Состояние",                type: "text",   value: "" });
 c("running",         { title: "Программа запущена",       type: "switch", value: false, readonly: true });
 c("finished",        { title: "Мойка завершена, не разгружена", type: "switch", value: false, readonly: true });
@@ -490,15 +537,18 @@ bind("power", "bsh_common_setting_powerstate",
   function (v) { return v === "On" ? true : v === "Off" ? false : null; },
   function (val) {
     var st = hc.bsh_common_status_operationstate;
-    if (!val && isRunning(st)) {
-      note("Выключение отменено: идёт программа (используйте «Отменить программу»)");
-      return false;
+    if (!val) {
+      if (resetPendingStart()) note("Старт отменён пользователем");
+      if (isBusy(st)) {
+        note("Выключение отменено: программа выполняется или отменяется");
+        return false;
+      }
+      if (!OPSTATE_RU.hasOwnProperty(st)) {
+        note("Выключение отменено: состояние машины неизвестно");
+        return false;
+      }
     }
-    if (!val && isBusy(st)) {
-      note("Выключение отменено: машина требует действия — посмотрите на дисплей (выключить можно кнопкой на машине)");
-      return false;
-    }
-    hcSet(UID.PowerState, val ? "On" : "Off");
+    return hcSet(UID.PowerState, val ? "On" : "Off");
   });
 
 bind("program", "bsh_common_root_selectedprogram",
@@ -517,7 +567,7 @@ PROGRAMS.forEach(function (p) {
 
 // «Мойка»: включение — старт выбранной программы с опциями и отложенным стартом, выключение — отмена
 bind("run", "bsh_common_status_operationstate",
-  function (v) { return v === undefined ? null : isBusy(v); },
+  function (v) { return pendingStart !== null || isBusy(v); },
   function (val) { return val ? startProgram() : abortProgram(); });
 
 OPTIONS.forEach(function (o) {
@@ -537,13 +587,14 @@ SETTINGS.forEach(function (s) {
       return null;
     },
     function (val) {
-      if (s.kind === "bool") hcSet(s.uid, !!val);
-      else if (s.kind === "num") hcSet(s.uid, Math.max(s.min, Math.min(s.max, Math.round(val) * s.scale)));
-      else if (!s.values.hasOwnProperty(String(toInt(val)))) {
+      if (s.kind === "bool") return hcSet(s.uid, !!val);
+      if (s.kind === "num") return hcSet(s.uid, Math.max(s.min, Math.min(s.max, Math.round(val) * s.scale)));
+      if (!s.values.hasOwnProperty(String(toInt(val)))) {
         note("Недопустимое значение для «" + s.title.replace(/^Настройка: /, "") + "»: " + val +
              ", можно: " + Object.keys(s.values).join(", "));
         return false;
-      } else hcSet(s.uid, toInt(val));
+      }
+      return hcSet(s.uid, toInt(val));
     });
 });
 
@@ -561,8 +612,12 @@ on("bsh_common_status_operationstate", function (v, prev, retained) {
   setCtrl("state", OPSTATE_RU[v] || String(v));
   setCtrl("running", isBusy(v));
   updateTimes();
+  if (!isIdle(v) && resetPendingStart()) note("Старт отменён: состояние машины изменилось");
+  if (isBusy(v)) {
+    setCtrl("finished", false);
+    if (unloadTimer !== null) { clearTimeout(unloadTimer); unloadTimer = null; }
+  }
   if (retained || prev === undefined || prev === v) return;
-  if (isRunning(v)) setCtrl("finished", false);
   if (isBusy(v) && !isBusy(prev) && CFG.resetDelayOnStart && UID.StartInRelative) {
     // отложенный старт задаётся на один запуск: следующий старт (например, плиткой в Sprut.hub) — сразу
     setCtrl("delay_h", 0);
@@ -571,14 +626,17 @@ on("bsh_common_status_operationstate", function (v, prev, retained) {
 
   var p = progByKey(hc.bsh_common_root_activeprogram) || progByKey(hc.bsh_common_root_selectedprogram);
   var name = p ? p.title : "";
+  var epoch = link.epoch;
 
-  if (v === "Run" && prev !== "Pause" && prev !== "ActionRequired") {
+  if (v === "Run" && prev !== "Pause" && prev !== "ActionRequired" && prev !== "Aborting") {
     setTimeout(function () {   // дождаться актуального оставшегося времени
+      if (epoch !== link.epoch || !isOnline() || hc.bsh_common_status_operationstate !== v) return;
       note("▶ Мойка началась: " + name + ", окончание ≈ " +
            fmtClock(Date.now() + toInt(hc.bsh_common_option_remainingprogramtime) * 1000), CFG.notifyStart);
     }, 3000);
   } else if (v === "DelayedStart") {
     setTimeout(function () {
+      if (epoch !== link.epoch || !isOnline() || hc.bsh_common_status_operationstate !== v) return;
       var sir = toInt(hc.bsh_common_option_startinrelative);
       var rem = toInt(hc.bsh_common_option_remainingprogramtime);
       note("⏰ Отложенный старт: " + name + ", начнётся в " + fmtClock(Date.now() + sir * 1000) +
@@ -592,7 +650,9 @@ on("bsh_common_status_operationstate", function (v, prev, retained) {
     if (CFG.unloadReminderMin > 0) {
       unloadTimer = setTimeout(function () {
         unloadTimer = null;
-        if (hc.bsh_common_status_doorstate !== "Open") note("Посуда чистая, но ещё не выгружена", true);
+        if (isOnline() && dev[D + "/finished"] && hc.bsh_common_status_doorstate !== "Open") {
+          note("Посуда чистая, но ещё не выгружена", true);
+        }
       }, CFG.unloadReminderMin * 60000);
     }
   } else if (v === "ActionRequired") {
@@ -635,6 +695,8 @@ on("swversion", function (v) { setCtrl("fw", String(v)); });
 // ---------------------------------------------------------------------
 trackMqtt(CFG.base + "/state/+", function (msg) {
   var key = msg.topic.split("/").pop();
+  // Пустое retained-сообщение удаляет значение, которого нет в новом снимке hcpy.
+  if (msg.value === "") { delete hc[key]; return; }
   var prev = hc[key];
   hc[key] = msg.value;
   (handlers[key] || []).forEach(function (fn) {
@@ -659,14 +721,18 @@ trackMqtt(CFG.base + "/event/+", function (msg) {
   }
 });
 
-// Связь: <base>/LWT hcpy обновляет, когда подключается к машине или теряет её,
-// а homeconnect/LWT брокер ставит в offline, если завершился сам процесс hcpy.
-// Без второго топика после остановки hcpy «Связь с машиной» оставалась бы включённой.
-var link = { bridge: null, device: null };   // null — ещё не знаем
+// hcpy публикует снимок состояния между LWT offline и online.
 function onLwt(which, msg) {
+  var wasOnline = isOnline();
   link[which] = msg.value === "online";
-  var online = link.bridge !== false && link.device === true;
-  if (!msg.retained && dev[D + "/online"] !== online) {
+  if (!msg.retained && !link[which]) {
+    if (which === "bridge") link.device = false;
+    link.epoch++;
+    hc = {};
+    resetPendingStart();
+  }
+  var online = isOnline();
+  if (!msg.retained && wasOnline !== online) {
     note(online ? "Связь с машиной восстановлена" :
          which === "bridge" ? "Потеряна связь с машиной: служба hcpy не работает" : "Потеряна связь с машиной");
   }
