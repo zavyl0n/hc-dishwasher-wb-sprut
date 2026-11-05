@@ -236,7 +236,7 @@ try:
 except ValueError:
     sys.exit("devices.json не читается как JSON")
 if not isinstance(devices, list) or not devices or any(not isinstance(d, dict) for d in devices):
-    sys.exit("devices.json должен быть непустым списком приборов")
+    sys.exit("devices.json должен быть списком с хотя бы одним профилем прибора")
 if sys.argv[2]:
     devices = [d for d in devices if d.get("name") == sys.argv[2]]
 if len(devices) != 1:
