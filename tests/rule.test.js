@@ -79,6 +79,19 @@ for (const file of ["rule/dishwasher.js", "examples/SMV4HVX31E/dishwasher.js"]) 
         assert.match(e.last(), /Потеряна связь с машиной$/);
       });
 
+      it("retained online машины без подтверждения hcpy не разрешает команды", () => {
+        const e = load(path.join(ROOT, file));
+        assert.equal(e.defs["dishwasher/online"].forceDefault, true);
+        e.mqtt(B + "/LWT", "online", true);
+        Object.keys(READY).forEach(k => e.mqtt(B + "/state/" + k, READY[k], true));
+        assert.equal(e.get("online"), false);
+        e.press("start");
+        e.user("power", false);
+        e.user("program", UID.auto2);
+        e.user("set_sound", 3);
+        assert.deepEqual(e.commands(), []);
+      });
+
       it("ход программы: состояние, фаза, прогресс, осталось, окончание", () => {
         const e = boot(file);
         op(e, "Run");
@@ -209,18 +222,74 @@ for (const file of ["rule/dishwasher.js", "examples/SMV4HVX31E/dishwasher.js"]) 
         assert.deepEqual(sets(e), [{ uid: UID.abort, value: true }]);
       });
 
-      it("машина выключена: сначала питание, через 5 с — старт", () => {
+      it("машина выключена: после подтверждения питания и паузы отправляется старт", () => {
         const e = boot(file, { state: { bsh_common_setting_powerstate: "Off" } });
-        e.press("start");
+        e.press("start").press("start");
         assert.deepEqual(sets(e), [{ uid: UID.power, value: "On" }]);
         assert.deepEqual(starts(e), []);
+        hc(e, "bsh_common_setting_powerstate", "On");
+        e.advance(4999);
+        assert.deepEqual(starts(e), []);
+        e.advance(1);
+        assert.deepEqual(starts(e), [{ program: UID.eco }]);
+      });
+
+      it("без подтверждения питания старт не отправляется", () => {
+        const e = boot(file, { state: { bsh_common_setting_powerstate: "Off" } });
+        e.user("run", true).advance(5000);
+        assert.deepEqual(starts(e), []);
+        assert.equal(e.get("run"), false);
+        assert.match(e.last(), /не подтвердила включение питания/);
+      });
+
+      it("старт во время включения питания можно отменить кнопкой или плиткой", () => {
+        for (const cancel of [e => e.press("abort"), e => e.user("run", false)]) {
+          const e = boot(file, { state: { bsh_common_setting_powerstate: "Off" } });
+          e.press("start");
+          assert.equal(e.get("run"), true);
+          cancel(e);
+          hc(e, "bsh_common_setting_powerstate", "On");
+          e.advance(5000);
+          assert.deepEqual(starts(e), []);
+          assert.equal(e.get("run"), false);
+          assert.match(e.last(), /Старт отменён пользователем/);
+        }
+      });
+
+      it("ожидающий старт отменяется при начале программы на машине", () => {
+        const e = boot(file, { state: { bsh_common_setting_powerstate: "Off" } });
+        e.press("start");
+        hc(e, "bsh_common_setting_powerstate", "On");
+        op(e, "Run");
+        op(e, "Ready");
         e.advance(5000);
+        assert.deepEqual(starts(e), []);
+      });
+
+      it("после переподключения не отправляет ожидающий старт и ждёт новый снимок двери", () => {
+        const e = boot(file, { state: { bsh_common_setting_powerstate: "Off" } });
+        e.press("start");
+        e.mqtt("homeconnect/LWT", "offline").mqtt("homeconnect/LWT", "online");
+        assert.equal(e.get("online"), false, "старый online машины сброшен");
+        hc(e, "bsh_common_setting_powerstate", "On");
+        op(e, "Ready");
+        hc(e, "bsh_common_status_remotecontrolstartallowed", "True");
+        e.mqtt(B + "/LWT", "online");
+        e.advance(5000);
+        assert.deepEqual(starts(e), []);
+        e.press("start");
+        assert.deepEqual(starts(e), []);
+        assert.match(e.last(), /нет подтверждения, что дверь закрыта/);
+        hc(e, "bsh_common_status_doorstate", "Closed");
+        e.press("start");
         assert.deepEqual(starts(e), [{ program: UID.eco }]);
       });
 
       it("после включения питания старт отменяется, если удалённый старт не разрешён", () => {
-        const e = boot(file, { state: { bsh_common_setting_powerstate: "Off", bsh_common_status_remotecontrolstartallowed: "False" } });
+        const e = boot(file, { state: { bsh_common_setting_powerstate: "Off" } });
         e.press("start");
+        hc(e, "bsh_common_setting_powerstate", "On");
+        hc(e, "bsh_common_status_remotecontrolstartallowed", "False");
         e.advance(5000);
         assert.deepEqual(starts(e), []);
         assert.match(e.last(), /удалённый старт не разрешён/);
@@ -228,9 +297,11 @@ for (const file of ["rule/dishwasher.js", "examples/SMV4HVX31E/dishwasher.js"]) 
 
       for (const [why, opts, re] of [
         ["дверь открыта", { state: { bsh_common_status_doorstate: "Open" } }, /дверь открыта/],
+        ["нет состояния двери", { state: { bsh_common_status_doorstate: "" } }, /нет подтверждения, что дверь закрыта/],
         ["удалённый старт не разрешён", { state: { bsh_common_status_remotecontrolstartallowed: "False" } }, /удалённый старт не разрешён/],
         ["нет связи", { device: "offline" }, /нет связи/],
         ["программа уже идёт", { state: { bsh_common_status_operationstate: "Run" } }, /уже запущена/],
+        ["программа отменяется", { state: { bsh_common_status_operationstate: "Aborting" } }, /отменяется/],
       ]) {
         it("старт не отправляется: " + why, () => {
           const e = boot(file, opts);
@@ -315,7 +386,7 @@ for (const file of ["rule/dishwasher.js", "examples/SMV4HVX31E/dishwasher.js"]) 
         const e = boot(file);
         e.user("power", false);
         assert.deepEqual(sets(e), [{ uid: UID.power, value: "Off" }]);
-        for (const st of ["Run", "Pause", "DelayedStart", "ActionRequired"]) {
+        for (const st of ["Run", "Pause", "DelayedStart", "ActionRequired", "Aborting", "Unknown"]) {
           const b = boot(file, { state: { bsh_common_status_operationstate: st } });
           b.user("power", false);
           assert.deepEqual(sets(b), [], st);
@@ -462,6 +533,28 @@ for (const file of ["rule/dishwasher.js", "examples/SMV4HVX31E/dishwasher.js"]) 
         hc(e, "bsh_common_status_doorstate", "Open");
         assert.equal(e.get("finished"), false);
         e.advance(120 * MIN);
+        assert.ok(!e.telegram.some(t => /не выгружена/.test(t)));
+      });
+
+      it("после отмены или нового запуска старые уведомления не уходят", () => {
+        const e = boot(file, TG);
+        op(e, "Run"); op(e, "Aborting");
+        e.advance(3000);
+        assert.ok(!e.telegram.some(t => /Мойка началась/.test(t)));
+        op(e, "Finished"); op(e, "Ready"); op(e, "Run");
+        e.advance(60 * MIN);
+        assert.ok(!e.telegram.some(t => /не выгружена/.test(t)));
+      });
+
+      it("снимок новой мойки после переподключения снимает напоминание о старой", () => {
+        const e = boot(file, TG);
+        op(e, "Run"); op(e, "Finished");
+        assert.equal(e.get("finished"), true);
+        e.mqtt(B + "/LWT", "offline");
+        op(e, "Run");
+        e.mqtt(B + "/LWT", "online");
+        assert.equal(e.get("finished"), false);
+        e.advance(60 * MIN);
         assert.ok(!e.telegram.some(t => /не выгружена/.test(t)));
       });
 
