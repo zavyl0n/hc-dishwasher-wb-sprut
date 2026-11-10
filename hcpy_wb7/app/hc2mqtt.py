@@ -13,7 +13,6 @@ import click
 import click_config_file
 import paho.mqtt.client as mqtt
 
-from HADiscovery import publish_ha_discovery
 from HCDevice import HCDevice
 from HCSocket import HCSocket
 from utils import clean_international_text, now
@@ -191,6 +190,9 @@ class DeviceChannel:
         if "mac" not in state and "swVersion" not in state:
             return
         try:
+            # Imported on demand: HADiscovery needs PyYAML, which the WB7 kit does not install.
+            from HADiscovery import publish_ha_discovery
+
             publish_ha_discovery(
                 self.discovery_file, self.config, state, self.client, self.topic, self.events_as_sensors
             )

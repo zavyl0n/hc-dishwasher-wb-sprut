@@ -132,6 +132,7 @@ var handlers = {};  // key state/* -> [функции]
 var unloadTimer = null;
 var pendingStart = null;
 var link = { bridge: null, device: null, epoch: 0 };
+var gapOp;         // состояние машины перед потерей связи: с ним сравнивается первый снимок после неё
 
 function on(key, fn) { (handlers[key] = handlers[key] || []).push(fn); }
 function isTrue(v) { return v === true || v === 1 || v === "True" || v === "true" || v === "1"; }
@@ -617,6 +618,10 @@ on("bsh_common_status_operationstate", function (v, prev, retained) {
     setCtrl("finished", false);
     if (unloadTimer !== null) { clearTimeout(unloadTimer); unloadTimer = null; }
   }
+  // Первый снимок после потери связи сравниваем с состоянием до неё: программа могла
+  // закончиться, пока hcpy переподключался к машине.
+  if (prev === undefined && !retained) prev = gapOp;
+  gapOp = undefined;
   if (retained || prev === undefined || prev === v) return;
   if (isBusy(v) && !isBusy(prev) && CFG.resetDelayOnStart && UID.StartInRelative) {
     // отложенный старт задаётся на один запуск: следующий старт (например, плиткой в Sprut.hub) — сразу
@@ -696,7 +701,11 @@ on("swversion", function (v) { setCtrl("fw", String(v)); });
 trackMqtt(CFG.base + "/state/+", function (msg) {
   var key = msg.topic.split("/").pop();
   // Пустое retained-сообщение удаляет значение, которого нет в новом снимке hcpy.
-  if (msg.value === "") { delete hc[key]; return; }
+  if (msg.value === "") {
+    if (key === "bsh_common_status_operationstate" && hc[key] !== undefined) gapOp = hc[key];
+    delete hc[key];
+    return;
+  }
   var prev = hc[key];
   hc[key] = msg.value;
   (handlers[key] || []).forEach(function (fn) {
@@ -728,6 +737,7 @@ function onLwt(which, msg) {
   if (!msg.retained && !link[which]) {
     if (which === "bridge") link.device = false;
     link.epoch++;
+    if (hc.bsh_common_status_operationstate !== undefined) gapOp = hc.bsh_common_status_operationstate;
     hc = {};
     resetPendingStart();
   }

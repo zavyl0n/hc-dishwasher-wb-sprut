@@ -2,7 +2,7 @@
 
     python3 -m unittest discover -s tests
 
-Внешние команды (uv, curl, systemctl, useradd, userdel, id, chown, sleep, mosquitto_sub)
+Внешние команды (uv, curl, systemctl, journalctl, useradd, userdel, id, chown, sleep, mosquitto_sub)
 подменены заглушками: каждая записывает свой вызов в журнал. Настоящие — bash, Python и
 зависимости hcpy: venv создаётся тем Python, который запускает тесты (нужен 3.13+ с TLS-PSK
 и пакеты из hcpy_wb7/requirements-wb7.txt), иначе тесты пропускаются.
@@ -33,7 +33,7 @@ def why_skip():
     if sys.version_info < (3, 13) or not getattr(ssl, "HAS_PSK", False):
         return "нужен Python 3.13+ с TLS-PSK"
     try:
-        import click, click_config_file, configobj, paho.mqtt.client, websocket, yaml  # noqa: F401
+        import click, click_config_file, configobj, paho.mqtt.client, websocket  # noqa: F401
     except ImportError:
         return "нет зависимостей hcpy (pip install --require-hashes -r hcpy_wb7/requirements-wb7.txt)"
     return None
@@ -43,7 +43,10 @@ SKIP = why_skip()
 
 STUBS = {
     "systemctl": 'echo "systemctl $*" >> "$STUB_LOG"\n'
-                 '[ "$1" = "is-active" ] && exit "${STUB_ACTIVE_EXIT:-3}"\n'
+                 'if [ "$1" = "is-active" ]; then\n'
+                 'if [ -f "$STUB_DIR/restarted" ]; then exit "${STUB_ACTIVE_AFTER_RESTART:-${STUB_ACTIVE_EXIT:-3}}"; fi\n'
+                 'exit "${STUB_ACTIVE_EXIT:-3}"; fi\n'
+                 'if [ "$1" = "restart" ]; then touch "$STUB_DIR/restarted"; fi\n'
                  'if [ "$1" = "restart" ] && [ "${STUB_RESTART_FAIL:-0}" = 1 ] '
                  '&& [ ! -f "$STUB_DIR/restart-failed" ]; then\n'
                  'touch "$STUB_DIR/restart-failed"; exit 1; fi\nexit 0',
@@ -52,6 +55,7 @@ STUBS = {
     "id": 'if [ "$1" = "-u" ]; then [ -f "$STUB_DIR/user-$2" ] && { echo 999; exit 0; }; exit 1; fi\n'
           'exec "%s" "$@"' % REAL_ID,
     "chown": 'echo "chown $*" >> "$STUB_LOG"',
+    "journalctl": 'echo "journalctl $*" >> "$STUB_LOG"\necho "запись журнала hcpy"',
     "sleep": "exit 0",
     "timeout": 'exec /bin/sleep 35',
     "mosquitto_sub": 'echo "mosquitto_sub $*" >> "$STUB_LOG"\n'
@@ -62,6 +66,7 @@ STUBS = {
                      'case "${STUB_MQTT:-fresh}" in\n'
                      'fresh) printf "%s offline\\n%s online\\n" "$topic" "$topic";;\n'
                      'offline) printf "%s offline\\n" "$topic";;\n'
+                     'stale) printf "%s online\\n%s offline\\n" "$topic" "$topic";;\n'
                      'wrong) printf "homeconnect/washer/LWT online\\n";;\n'
                      '*) exit 1;;\nesac',
     "curl": 'echo "curl $*" >> "$STUB_LOG"\nout=""\n'
@@ -159,7 +164,8 @@ class Installer(unittest.TestCase):
         calls = self.calls()
         self.assertIn("/0.11.32/uv-armv7-unknown-linux-gnueabihf.tar.gz", calls)
         self.assertIn("uv python install 3.13 --no-bin", calls)
-        self.assertIn("--require-hashes -r", calls)
+        self.assertIn("--require-hashes --build-constraints %s/build-constraints-wb7.txt -r %s/requirements-wb7.txt\n"
+                      % (self.src, self.src), calls)
         self.assertIn("uv cache clean", calls)
         self.assertIn("mosquitto_sub -h 127.0.0.1 -R -W 32 -t homeconnect/dishwasher/LWT -v\n600\n", calls)
         self.assertNotIn(password, calls)
@@ -243,6 +249,11 @@ class Installer(unittest.TestCase):
         self.assertIn("Служба hcpy уже работает", r.stdout)
         self.assertNotIn("5/5", r.stdout)
         self.assertIn("systemctl restart hcpy.service", self.calls())
+        self.assertIn("ПОЛУЧИЛОСЬ: служба hcpy перезапущена", r.stdout)
+        # подписка на готовность машины открыта до перезапуска службы
+        tail = self.calls().split("systemctl daemon-reload\n")[-1]
+        self.assertRegex(tail, r"(?s)^mosquitto_sub -h 127\.0\.0\.1 -R -W 40 -t homeconnect/dishwasher/LWT -v\n"
+                               r".*systemctl restart hcpy\.service\n")
         self.assertIn("User=hcpy", self.unit.read_text(encoding="utf-8"), "юнит обновлён")
         self.assertEqual(self.calls().count("uv venv"), before + 1, "новый venv готовится отдельно")
         self.assertNotEqual((self.base / "current").resolve(), current)
@@ -266,6 +277,38 @@ class Installer(unittest.TestCase):
                 self.assertIn("Данных от посудомойки нет", r.stdout)
                 self.assertFalse((self.base / "current").exists())
                 self.assertTrue(self.profile.exists())
+
+    def test_update_requires_fresh_ready_status_after_restart(self):
+        """Служба запустилась, но машина не ответила (или «online» осталось от прежнего процесса) — откат."""
+        self.install(MQTT_USER="old-user", MQTT_PASS="old-password")
+        r = self.run_sh("--service", script=self.base / "install_hcpy.sh")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        current = (self.base / "current").resolve()
+        paths = [self.base / "config" / "devices.json", self.base / "config" / "hcpy.ini", self.unit]
+        previous_files = [p.read_bytes() for p in paths]
+        self.put_devices([dict(DEVICES[0], host="192.0.2.11")])
+        for n, reply in enumerate(("offline", "stale", "wrong", "no-broker"), 1):
+            with self.subTest(reply=reply):
+                r = self.run_sh("--devices", str(self.profile), STUB_ACTIVE_EXIT="0", STUB_MQTT=reply,
+                                MQTT_USER="new-user", MQTT_PASS="new-password")
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn("служба hcpy не получила данные от посудомойки", r.stdout)
+                self.assertIn("запись журнала hcpy", r.stdout)
+                self.assertIn("Откат установки hcpy", r.stdout)
+                self.assertEqual((self.base / "current").resolve(), current)
+                self.assertEqual([p.read_bytes() for p in paths], previous_files)
+                self.assertTrue(self.profile.exists())
+                # перезапуск с новой версией и ещё один — после отката
+                self.assertEqual(self.calls().count("systemctl restart hcpy.service"), 2 * n)
+                self.assertNotIn("new-password", self.calls() + r.stdout + r.stderr)
+
+    def test_update_fails_when_service_stops_after_restart(self):
+        self.install()
+        current = (self.base / "current").resolve()
+        r = self.run_sh(STUB_ACTIVE_EXIT="0", STUB_ACTIVE_AFTER_RESTART="3", STUB_MQTT="offline")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("служба hcpy не получила данные от посудомойки", r.stdout)
+        self.assertEqual((self.base / "current").resolve(), current)
 
     def test_only_selected_device_is_installed_and_aes_is_rejected(self):
         self.put_devices(DEVICES + [dict(DEVICES[0], name="washer", iv="test")])

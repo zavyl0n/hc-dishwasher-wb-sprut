@@ -180,11 +180,13 @@ PREVIOUS=
 ACTIVATING=0
 ACTIVE=0
 COMMITTED=0
+SUB=
 
 cleanup() {
     local rc=$?
     trap - EXIT
     set +e
+    if [ -n "$SUB" ]; then kill "$SUB" 2>/dev/null; fi
     if [ "$COMMITTED" -eq 0 ] && [ "$ACTIVATING" -eq 1 ]; then
         say "Откат установки hcpy"
         if [ -n "$PREVIOUS" ]; then
@@ -268,7 +270,8 @@ PY
 say "3/5 hcpy ($(head -1 "$SRC/app/VERSION" 2>/dev/null))"
 cp -r "$SRC/app" "$RELEASE/app"
 say "4/5 зависимости"
-"$UV" pip install --python "$PYTHON" --require-hashes -r "$SRC/requirements-wb7.txt"
+"$UV" pip install --python "$PYTHON" --require-hashes \
+    --build-constraints "$SRC/build-constraints-wb7.txt" -r "$SRC/requirements-wb7.txt"
 "$UV" cache clean >/dev/null 2>&1 || true
 (cd "$RELEASE/app" && "$PYTHON" -c "import hc2mqtt")
 echo "hcpy загружается без ошибок"
@@ -277,16 +280,11 @@ if [ -d "$BASE/python" ]; then chmod -R go+rX "$BASE/python"; fi
 if [ -f "$INI" ]; then install -m 600 "$INI" "$TX/hcpy.ini"; fi
 write_ini "$PYTHON" "$TX/hcpy.ini"
 
-if systemctl is-active --quiet hcpy.service 2>/dev/null; then
-    ACTIVE=1
-    echo "Служба hcpy уже работает. Новый экземпляр во время обновления не запускается."
-else
-    say "5/5 пробное подключение к $NAME (до 30 с). Посудомойка должна быть включена."
-    command -v mosquitto_sub >/dev/null || { echo "Нужен mosquitto_sub из пакета mosquitto-clients"; exit 1; }
-    ARGS=()
-    if [ -f "$TX/hcpy.ini" ]; then
-        ARGS=(--config "$TX/hcpy.ini")
-        "$PYTHON" - "$TX/hcpy.ini" "$TX/mosquitto_sub" <<'PY'
+command -v mosquitto_sub >/dev/null || { echo "Нужен mosquitto_sub из пакета mosquitto-clients"; exit 1; }
+ARGS=()
+if [ -f "$TX/hcpy.ini" ]; then
+    ARGS=(--config "$TX/hcpy.ini")
+    "$PYTHON" - "$TX/hcpy.ini" "$TX/mosquitto_sub" <<'PY'
 from configobj import ConfigObj
 import sys
 
@@ -299,24 +297,53 @@ with open(sys.argv[2], "w", encoding="utf-8") as fh:
                 sys.exit("Логин или пароль не подходят для диагностики MQTT")
             fh.write(f"{flag} {value}\n")
 PY
-    fi
-    unset MQTT_USER MQTT_PASS
-    TOPIC="${PREFIX}${NAME}/LWT"
-    XDG_CONFIG_HOME="$TX" mosquitto_sub -h "$MQTT_HOST" -R -W 32 -t "$TOPIC" -v > "$TX/mqtt.log" 2>&1 &
+fi
+unset MQTT_USER MQTT_PASS
+TOPIC="${PREFIX}${NAME}/LWT"
+
+# Подписка на признак готовности машины. Сохранённые брокером значения не выводятся (-R).
+watch_lwt() {
+    XDG_CONFIG_HOME="$TX" mosquitto_sub -h "$MQTT_HOST" -R -W "$1" -t "$TOPIC" -v > "$TX/mqtt.log" 2>&1 &
     SUB=$!
     sleep 1
+}
+stop_watch() {
+    kill "$SUB" 2>/dev/null || true
+    wait "$SUB" 2>/dev/null || true
+    SUB=
+}
+lwt_online() { grep -Fxq "$TOPIC online" "$TX/mqtt.log"; }
+# После перезапуска службы «online» считается только после «offline» нового процесса:
+# прежний мог опубликовать своё «online» перед самой остановкой.
+lwt_online_after_restart() {
+    awk -v t="$TOPIC" '$0 == t " offline" { off = 1 } $0 == t " online" && off { ok = 1 } END { exit !ok }' "$TX/mqtt.log"
+}
+# Ждать готовности до 30 с. $1 — проверка готовности, остальное — команда «hcpy ещё работает».
+wait_online() {
+    local ready=$1 attempt
+    shift
+    for ((attempt=0; attempt<30; attempt++)); do
+        if "$ready"; then return 0; fi
+        if ! "$@" 2>/dev/null; then break; fi
+        if ! kill -0 "$SUB" 2>/dev/null; then break; fi
+        sleep 1
+    done
+    "$ready"   # подписчик мог записать ответ и завершиться
+}
+
+if systemctl is-active --quiet hcpy.service 2>/dev/null; then
+    ACTIVE=1
+    echo "Служба hcpy уже работает. Новый экземпляр во время обновления не запускается:"
+    echo "связь с посудомойкой проверяется после перезапуска службы."
+else
+    say "5/5 пробное подключение к $NAME (до 30 с). Посудомойка должна быть включена."
+    watch_lwt 32
     (cd "$RELEASE/app" && exec timeout 30 "$PYTHON" -u hc2mqtt.py -d "$TX/devices.json" \
         -h "$MQTT_HOST" -p "$PREFIX" "${ARGS[@]}") > "$TX/hcpy.log" 2>&1 &
     PROBE=$!
     FRESH=0
-    for ((attempt=0; attempt<30; attempt++)); do
-        if ! kill -0 "$PROBE" 2>/dev/null; then break; fi
-        if grep -Fxq "$TOPIC online" "$TX/mqtt.log"; then FRESH=1; break; fi
-        if ! kill -0 "$SUB" 2>/dev/null; then break; fi
-        sleep 1
-    done
-    kill "$SUB" 2>/dev/null || true
-    wait "$SUB" 2>/dev/null || true
+    if wait_online lwt_online kill -0 "$PROBE"; then FRESH=1; fi
+    stop_watch
     kill "$PROBE" 2>/dev/null || true
     wait "$PROBE" 2>/dev/null || true
     if [ "$FRESH" -eq 1 ]; then
@@ -346,9 +373,20 @@ if [ "$ACTIVE" -eq 1 ] || [ -f "$UNIT" ]; then
     write_unit "$UNIT"
     systemctl daemon-reload
     if [ "$ACTIVE" -eq 1 ]; then
+        say "Перезапуск службы hcpy и проверка связи с $NAME (до 30 с). Посудомойка должна быть в сети."
+        watch_lwt 40
         systemctl restart hcpy.service
-        sleep 2
-        systemctl is-active --quiet hcpy.service
+        FRESH=0
+        if wait_online lwt_online_after_restart systemctl is-active --quiet hcpy.service; then FRESH=1; fi
+        stop_watch
+        if [ "$FRESH" -eq 1 ]; then
+            echo "ПОЛУЧИЛОСЬ: служба hcpy перезапущена, $NAME передала актуальные данные."
+        else
+            echo "После перезапуска служба hcpy не получила данные от посудомойки. Последние строки журналов:"
+            journalctl -u hcpy.service -n 25 --no-pager 2>/dev/null || true
+            tail -n 25 "$TX/mqtt.log" || true
+            exit 1
+        fi
     fi
 fi
 install -m 755 "$SRC/install_hcpy.sh" "$TX/install_hcpy.sh"
