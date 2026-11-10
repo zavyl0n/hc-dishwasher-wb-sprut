@@ -69,12 +69,24 @@ class Example(unittest.TestCase):
                 self.assertEqual((Path(out) / name).read_bytes(), (EXAMPLE / name).read_bytes(),
                                  "%s отличается от примера — перегенерируйте examples/SMV4HVX31E" % name)
 
+    def test_reproduces_compact_example_byte_exact(self):
+        # python3 tools/make_kit.py tests/fixtures/smv4hvx31e.json --out <папка> --sprut-compact
+        with tempfile.TemporaryDirectory() as out:
+            r = run_cli(FIXTURES / "smv4hvx31e.json", "--out", out, "--sprut-compact")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual((Path(out) / "spruthub_dishwasher.json").read_bytes(),
+                             (EXAMPLE / "spruthub_dishwasher_compact.json").read_bytes(),
+                             "компактный шаблон отличается от примера — перегенерируйте его")
+            # параметры вида Sprut.hub правило не меняют
+            self.assertEqual((Path(out) / "dishwasher.js").read_bytes(), (EXAMPLE / "dishwasher.js").read_bytes())
+
     def test_cli_summary(self):
         with tempfile.TemporaryDirectory() as out:
             r = run_cli(FIXTURES / "smv4hvx31e.json", "--out", out)
         self.assertIn("Модель: Bosch SMV4HVX31E, топики hcpy: homeconnect/dishwasher/...", r.stdout)
-        self.assertIn("Программы (8):", r.stdout)
+        self.assertIn("Программы (8): Эко 50° [Eco50], Авто 45–65° [Auto2],", r.stdout)
         self.assertNotIn("Внимание", r.stdout)
+        self.assertNotIn("Sprut.hub:", r.stdout)
 
     def test_secrets_are_not_copied(self):
         with tempfile.TemporaryDirectory() as out:
@@ -317,27 +329,93 @@ class KeepCfg(unittest.TestCase):
         self.assertEqual((src, kept, added, gone), (ex, [], [], []))
 
 
+# Поля, которые шаблон вправе использовать (по схеме редактора шаблонов Sprut.hub).
+TOP_KEYS = {"name", "manufacturer", "model", "modelIds", "services", "options"}
+SERVICE_KEYS = {"name", "type", "visible", "characteristics"}
+CHAR_KEYS = {"type", "name", "unit", "link", "minValue", "maxValue", "minStep"}
+OPTION_KEYS = CHAR_KEYS | {"inputType", "write", "value", "values"}
+LINK_KEYS = {"type", "topicGet", "topicSet", "map"}
+# в сервисе «Параметр» (C_Option) — не больше одной характеристики каждого типа
+C_OPTION_CHARS = {"C_String", "C_Integer", "C_Boolean", "C_Double", "C_Long", "Name"}
+
+VARIANTS = [
+    {},
+    {"compact": True},
+    {"settings_options": True},
+    {"compact": True, "settings_options": True},
+]
+
+
 class Template(unittest.TestCase):
-    def check_links(self, dev):
+    def check_links(self, dev, **view):
         m = build(dev)
         rule = make_kit.build_rule(m)
         cells = rule_cells(rule, m)
-        tpl = make_kit.build_template(m)
+        tpl = make_kit.build_template(m, **view)
         used = set()
-        for s in tpl["services"]:
-            for c in s["characteristics"]:
-                for lk in c["link"]:
-                    ctrl = lk["topicGet"].rsplit("/", 1)[1]
-                    used.add(ctrl)
-                    self.assertTrue(lk["topicGet"].startswith("/devices/(1)/controls/"))
-                    if "topicSet" in lk:
-                        self.assertEqual(lk["topicSet"], lk["topicGet"] + "/on")
+        linked = [c for s in tpl["services"] for c in s["characteristics"]] + tpl["options"]
+        for c in linked:
+            self.assertEqual(len(c["link"]), 1)
+            for lk in c["link"]:
+                self.assertEqual(set(lk) - LINK_KEYS, set())
+                ctrl = lk["topicGet"].rsplit("/", 1)[1]
+                used.add(ctrl)
+                self.assertTrue(lk["topicGet"].startswith("/devices/(1)/controls/"))
+                if "topicSet" in lk:
+                    self.assertEqual(lk["topicSet"], lk["topicGet"] + "/on")
         self.assertEqual(used - cells, set(), "шаблон ссылается на контролы, которых нет в правиле")
         return m, tpl
 
+    def controls(self, tpl):
+        """Контрол WB -> сколько раз он привязан в шаблоне."""
+        seen = {}
+        for c in [c for s in tpl["services"] for c in s["characteristics"]] + tpl["options"]:
+            ctrl = c["link"][0]["topicGet"].rsplit("/", 1)[1]
+            seen[ctrl] = seen.get(ctrl, 0) + 1
+        return seen
+
     def test_all_links_point_to_rule_controls(self):
-        self.check_links(smv())
-        self.check_links(other())
+        for view in VARIANTS:
+            self.check_links(smv(), **view)
+            self.check_links(other(), **view)
+
+    def test_structure_in_every_variant(self):
+        for dev in (smv(), other()):
+            for view in VARIANTS:
+                _, tpl = self.check_links(dev, **view)
+                self.assertEqual(set(tpl) - TOP_KEYS, set())
+                for s in tpl["services"]:
+                    self.assertEqual(set(s) - SERVICE_KEYS, set(), s["name"])
+                    types = [c["type"] for c in s["characteristics"]]
+                    self.assertEqual(len(types), len(set(types)), "%s: тип характеристики повторяется" % s["name"])
+                    for c in s["characteristics"]:
+                        self.assertEqual(set(c) - CHAR_KEYS, set(), s["name"])
+                    if s["type"] == "C_Option":
+                        self.assertEqual(set(types) - C_OPTION_CHARS, set(), s["name"])
+                        if len(types) > 1:
+                            # общий сервис: без подписей характеристики неразличимы
+                            names = [c.get("name") for c in s["characteristics"]]
+                            self.assertTrue(all(names), s["name"])
+                            self.assertEqual(len(names), len(set(names)), s["name"])
+                for o in tpl["options"]:
+                    self.assertEqual(set(o) - OPTION_KEYS, set(), o["name"])
+                    self.assertIn(o["type"], ("String", "Integer", "Boolean"))
+                    self.assertEqual(o["write"], "topicSet" in o["link"][0], o["name"])
+                    if "values" in o:
+                        # редактор Sprut.hub требует value вместе с values
+                        self.assertIn(o["value"], [v["value"] for v in o["values"]])
+                        self.assertTrue(all(isinstance(v["name"], str) and v["name"] for v in o["values"]))
+                names = [o["name"] for o in tpl["options"]]
+                self.assertEqual(len(names), len(set(names)))
+
+    def test_views_bind_the_same_controls(self):
+        # параметры вида меняют раскладку, но не набор данных
+        for dev in (smv(), other()):
+            base = self.controls(self.check_links(dev)[1])
+            # дважды привязаны только уровни соли и ополаскивателя (индикатор и процент)
+            self.assertEqual({c for c, n in base.items() if n != 1} - {"salt_level", "rinse_level"}, set())
+            for view in VARIANTS[1:]:
+                self.assertEqual(self.controls(self.check_links(dev, **view)[1]), base, view)
 
     def test_main_services(self):
         _, tpl = self.check_links(smv())
@@ -346,6 +424,18 @@ class Template(unittest.TestCase):
         self.assertEqual((valve["name"], valve["type"]), ("Мойка", "Valve"))
         active = [c for c in valve["characteristics"] if c["type"] == "Active"][0]
         self.assertEqual(active["link"][0]["topicSet"], "/devices/(1)/controls/run/on")
+
+    def test_countdown_limit_covers_delay_plus_program(self):
+        # «До окончания» = задержка старта + время программы: сутки задержки и «Эко» — уже 99900 с
+        def limit(dev):
+            valve = make_kit.build_template(build(dev))["services"][0]
+            return [c for c in valve["characteristics"] if c["type"] == "RemainingDuration"][0]["maxValue"]
+        self.assertEqual(limit(smv()), 86400 + 6 * 3600)
+        self.assertGreater(limit(smv()), 86400 + max(d for _, d in make_kit.PROGRAM_INFO.values()))
+        dev = smv()
+        sir = [f for f in dev["features"].values() if f["name"] == "BSH.Common.Option.StartInRelative"][0]
+        sir["max"] = "21600"
+        self.assertEqual(limit(dev), 21600 + 6 * 3600)
 
     def test_sensor_services_require_available_telemetry(self):
         _, full = self.check_links(smv())
@@ -382,26 +472,169 @@ class Template(unittest.TestCase):
         self.assertIn("Настройка: удалённое управление (0, 2)", names)
         self.assertIn("Настройка: жёсткость воды (0–3)", names)
 
+    def test_units_are_fields_not_parts_of_names(self):
+        _, tpl = self.check_links(smv())
+        by_name = {s["name"]: s["characteristics"][0] for s in tpl["services"]}
+        self.assertEqual(by_name["Прогресс"]["unit"], "%")
+        self.assertEqual(by_name["Отложить старт"]["unit"], "ч")
+        silence = by_name["Настройка: длительность тихого режима"]
+        self.assertEqual((silence["unit"], silence["minValue"], silence["maxValue"]), ("мин", 1, 30))
+        # у другой модели та же настройка без единиц (не время)
+        _, tpl = self.check_links(other())
+        silence = [s for s in tpl["services"] if s["name"] == "Настройка: длительность тихого режима"][0]
+        self.assertNotIn("unit", silence["characteristics"][0])
+
     def test_delay_slider_follows_machine_limit(self):
         dev = smv()
         sir = [f for f in dev["features"].values() if f["name"] == "BSH.Common.Option.StartInRelative"][0]
         sir["max"] = "21600"
         tpl = make_kit.build_template(build(dev))
-        delay = [s for s in tpl["services"] if s["name"] == "Отложить старт, ч"][0]["characteristics"][0]
+        delay = [s for s in tpl["services"] if s["name"] == "Отложить старт"][0]["characteristics"][0]
         self.assertEqual(delay["maxValue"], 6)
+        tpl = make_kit.build_template(build(dev), compact=True)
+        delay = [s for s in tpl["services"] if s["name"] == "Отложенный старт"][0]["characteristics"][0]
+        self.assertEqual((delay["type"], delay["maxValue"]), ("C_Integer", 6))
 
     def test_no_delay_services_without_start_in_relative(self):
-        _, tpl = self.check_links(other())
-        names = [s["name"] for s in tpl["services"]]
-        self.assertNotIn("Отложить старт, ч", names)
-        self.assertNotIn("Завершить к (ЧЧ:ММ)", names)
+        for view in ({}, {"compact": True}):
+            _, tpl = self.check_links(other(), **view)
+            self.assertNotIn("delay_h", self.controls(tpl))
+            self.assertNotIn("finish_at", self.controls(tpl))
         _, tpl = self.check_links(smv())
-        self.assertIn("Отложить старт, ч", [s["name"] for s in tpl["services"]])
+        names = [s["name"] for s in tpl["services"]]
+        self.assertIn("Отложить старт", names)
+        self.assertIn("Завершить к (ЧЧ:ММ)", names)
 
     def test_service_names_unique(self):
         for dev in (smv(), other()):
-            names = [s["name"] for s in make_kit.build_template(build(dev))["services"]]
-            self.assertEqual(len(names), len(set(names)))
+            for view in VARIANTS:
+                names = [s["name"] for s in make_kit.build_template(build(dev), **view)["services"]]
+                self.assertEqual(len(names), len(set(names)))
+
+    def test_diagnostics_are_read_only_device_options(self):
+        _, tpl = self.check_links(smv())
+        opts = {o["name"]: o for o in tpl["options"]}
+        self.assertEqual(list(opts), ["Прошивка", "Доступно обновление ПО", "Wi-Fi, dBm", "Всего запусков",
+                                      "Как завершилась последняя программа", "Тихий режим: осталось, мин",
+                                      "Прогноз расхода энергии, %", "Прогноз расхода воды, %"])
+        for o in opts.values():
+            self.assertEqual((o["inputType"], o["write"]), ("STATUS", False))
+            self.assertNotIn("topicSet", o["link"][0])
+        self.assertEqual((opts["Прошивка"]["type"], opts["Прошивка"]["link"][0]["type"]), ("String", "String"))
+        # переключатель WB публикует 0/1
+        update = opts["Доступно обновление ПО"]
+        self.assertEqual((update["type"], update["link"][0]["type"]), ("Boolean", "Integer"))
+        # диагностика больше не занимает сервисы; скрытым остаётся только число минут для сценариев
+        hidden = [s["name"] for s in tpl["services"]
+                  if s.get("visible") is False and not s["name"].startswith("Настройка:")]
+        self.assertEqual(hidden, ["Осталось, мин"])
+
+
+class TemplateViews(unittest.TestCase):
+    """Необязательные параметры вида Sprut.hub: --sprut-compact, --sprut-settings-options, --sprut-programs."""
+
+    def tpl(self, dev=None, **view):
+        return make_kit.build_template(build(dev or smv()), **view)
+
+    def test_default_view_is_not_affected(self):
+        m = build(smv())
+        self.assertEqual(make_kit.build_template(m),
+                         make_kit.build_template(m, compact=False, settings_options=False, programs=None))
+
+    def test_compact_merges_related_values(self):
+        by_name = {s["name"]: s for s in self.tpl(compact=True)["services"]}
+
+        def chars(name):
+            return [(c["type"], c["name"], c["link"][0]["topicGet"].rsplit("/", 1)[1])
+                    for c in by_name[name]["characteristics"]]
+        self.assertEqual(chars("Состояние"), [("C_String", "Состояние", "state"),
+                                              ("C_Integer", "Прогресс", "progress"),
+                                              ("C_Boolean", "Связь с машиной", "online")])
+        self.assertEqual(chars("Осталось"), [("C_String", "Осталось", "remaining"),
+                                             ("C_Integer", "Осталось минут", "remaining_min")])
+        self.assertEqual(chars("Старт через"), [("C_String", "Старт через", "start_in"),
+                                                ("C_Boolean", "Удалённый старт разрешён", "remote_start")])
+        self.assertEqual(chars("Отложенный старт"), [("C_Integer", "Отложить на", "delay_h"),
+                                                     ("C_String", "Завершить к (ЧЧ:ММ)", "finish_at")])
+        for c in by_name["Отложенный старт"]["characteristics"]:
+            self.assertIn("topicSet", c["link"][0])
+        for gone in ("Прогресс", "Связь с машиной", "Удалённый старт разрешён", "Осталось, мин",
+                     "Отложить старт", "Завершить к (ЧЧ:ММ)"):
+            self.assertNotIn(gone, by_name)
+
+    def test_compact_has_fewer_tiles(self):
+        def visible(tpl):
+            return sum(1 for s in tpl["services"] if s.get("visible", True))
+        self.assertEqual(visible(self.tpl()) - visible(self.tpl(compact=True)), 4)
+
+    def test_compact_without_remote_start_and_delay(self):
+        by_name = {s["name"]: s for s in self.tpl(other(), compact=True)["services"]}
+        self.assertNotIn("Отложенный старт", by_name)
+        self.assertEqual([c["type"] for c in by_name["Старт через"]["characteristics"]], ["C_String"])
+        self.assertNotIn("name", by_name["Старт через"]["characteristics"][0])
+
+    def test_settings_as_options_have_value_names(self):
+        tpl = self.tpl(settings_options=True)
+        self.assertFalse([s for s in tpl["services"] if s["name"].startswith("Настройка:")])
+        opts = {o["name"]: o for o in tpl["options"]}
+        self.assertEqual(len(opts), 8 + 11)
+        hardness = opts["Жёсткость воды"]
+        self.assertEqual(hardness["type"], "Integer")
+        self.assertEqual(hardness["values"][0], {"value": 0, "name": "0 (без соли)"})
+        self.assertEqual([v["value"] for v in hardness["values"]], list(range(8)))
+        self.assertEqual(hardness["link"], [{"type": "Integer",
+                                             "topicGet": "/devices/(1)/controls/set_hardness",
+                                             "topicSet": "/devices/(1)/controls/set_hardness/on"}])
+        # два значения — тоже список с названиями, а не выключатель
+        self.assertEqual([v["name"] for v in opts["Подключение воды"]["values"]], ["Холодная", "Горячая"])
+        self.assertEqual(opts["InfoLight (луч на полу)"]["type"], "Boolean")
+        silence = opts["Длительность тихого режима"]
+        self.assertEqual((silence["minValue"], silence["maxValue"], silence["unit"]), (1, 30, "мин"))
+        for name, o in opts.items():
+            if o["write"]:
+                # начальные значения хаб не должен ни читать, ни записывать при старте
+                self.assertNotIn("init", o)
+                self.assertNotIn("inputType", o)
+
+    def test_settings_as_options_keep_sparse_values(self):
+        opts = {o["name"]: o for o in self.tpl(other(), settings_options=True)["options"]}
+        self.assertEqual([v["value"] for v in opts["Удалённое управление"]["values"]], [0, 2])
+
+    def test_selected_programs_come_first_others_hidden(self):
+        m = build(smv())
+        picked = make_kit.pick_programs(m, " quick65, Eco50 ,quick65")
+        self.assertEqual(picked, ["Quick65", "Eco50"])
+        progs = [s for s in make_kit.build_template(m, programs=picked)["services"]
+                 if s["name"].startswith("Программа: ")]
+        self.assertEqual(len(progs), 8)
+        self.assertEqual([s["name"] for s in progs[:2]], ["Программа: Быстрая 65°", "Программа: Эко 50°"])
+        self.assertEqual([s.get("visible", True) for s in progs], [True, True] + [False] * 6)
+        # без параметра плитки есть у всех программ
+        self.assertTrue(all(s.get("visible", True) for s in make_kit.build_template(m)["services"]
+                            if s["name"].startswith("Программа: ")))
+
+    def test_unknown_or_empty_program_list_is_rejected(self):
+        m = build(smv())
+        for spec, text in (("Eco50,Turbo", "нет программы Turbo"), (" , ", "не указано ни одной программы")):
+            with self.assertRaises(SystemExit) as cm:
+                make_kit.pick_programs(m, spec)
+            self.assertIn(text, str(cm.exception))
+            self.assertIn("Quick65 (Быстрая 65°)", str(cm.exception))
+
+    def test_cli_flags(self):
+        with tempfile.TemporaryDirectory() as out:
+            r = run_cli(FIXTURES / "smv4hvx31e.json", "--out", out, "--sprut-compact",
+                        "--sprut-settings-options", "--sprut-programs", "eco50,001")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("Sprut.hub: плитки программ — Eco50, 001; остальные скрыты", r.stdout)
+            self.assertIn("сверьте их с Wiren Board", r.stdout)
+            got = json.loads((Path(out) / "spruthub_dishwasher.json").read_text(encoding="utf-8"))
+            m = build(smv())
+            self.assertEqual(got, make_kit.build_template(m, compact=True, settings_options=True,
+                                                          programs=["Eco50", "001"]))
+            r = run_cli(FIXTURES / "smv4hvx31e.json", "--out", out, "--sprut-programs", "Turbo")
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("нет программы Turbo", r.stderr)
 
 
 if __name__ == "__main__":

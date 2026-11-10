@@ -37,7 +37,7 @@
               "topicGet": "/devices/(1)/controls/remaining_sec"
             }
           ],
-          "maxValue": 86400
+          "maxValue": 108000
         },
         {
           "type": "StatusFault",
@@ -259,7 +259,7 @@
       ]
     },
     {
-      "name": "Отложить старт, ч",
+      "name": "Отложить старт",
       "type": "C_Option",
       "characteristics": [
         {
@@ -273,7 +273,8 @@
           ],
           "minValue": 0,
           "maxValue": 24,
-          "minStep": 1
+          "minStep": 1,
+          "unit": "ч"
         }
       ]
     },
@@ -339,7 +340,7 @@
       ]
     },
     {
-      "name": "Прогресс, %",
+      "name": "Прогресс",
       "type": "C_Option",
       "characteristics": [
         {
@@ -349,7 +350,8 @@
               "type": "Integer",
               "topicGet": "/devices/(1)/controls/progress"
             }
-          ]
+          ],
+          "unit": "%"
         }
       ]
     },
@@ -620,6 +622,22 @@
       ]
     },
     {
+      "name": "Осталось, мин",
+      "type": "C_Option",
+      "characteristics": [
+        {
+          "type": "C_Integer",
+          "link": [
+            {
+              "type": "Integer",
+              "topicGet": "/devices/(1)/controls/remaining_min"
+            }
+          ]
+        }
+      ],
+      "visible": false
+    },
+    {
       "name": "Настройка: InfoLight (луч на полу)",
       "type": "Switch",
       "characteristics": [
@@ -768,7 +786,7 @@
       "visible": false
     },
     {
-      "name": "Настройка: длительность тихого режима, мин",
+      "name": "Настройка: длительность тихого режима",
       "type": "C_Option",
       "characteristics": [
         {
@@ -782,7 +800,8 @@
           ],
           "minValue": 1,
           "maxValue": 30,
-          "minStep": 1
+          "minStep": 1,
+          "unit": "мин"
         }
       ],
       "visible": false
@@ -823,150 +842,104 @@
         }
       ],
       "visible": false
-    },
-    {
-      "name": "Как завершилась последняя программа",
-      "type": "C_Option",
-      "characteristics": [
-        {
-          "type": "C_String",
-          "link": [
-            {
-              "type": "String",
-              "topicGet": "/devices/(1)/controls/end_trigger"
-            }
-          ]
-        }
-      ],
-      "visible": false
-    },
-    {
-      "name": "Осталось, мин",
-      "type": "C_Option",
-      "characteristics": [
-        {
-          "type": "C_Integer",
-          "link": [
-            {
-              "type": "Integer",
-              "topicGet": "/devices/(1)/controls/remaining_min"
-            }
-          ]
-        }
-      ],
-      "visible": false
-    },
-    {
-      "name": "Тихий режим: осталось, мин",
-      "type": "C_Option",
-      "characteristics": [
-        {
-          "type": "C_Integer",
-          "link": [
-            {
-              "type": "Integer",
-              "topicGet": "/devices/(1)/controls/silence_left"
-            }
-          ]
-        }
-      ],
-      "visible": false
-    },
-    {
-      "name": "Прогноз энергии, %",
-      "type": "C_Option",
-      "characteristics": [
-        {
-          "type": "C_Integer",
-          "link": [
-            {
-              "type": "Integer",
-              "topicGet": "/devices/(1)/controls/energy_forecast"
-            }
-          ]
-        }
-      ],
-      "visible": false
-    },
-    {
-      "name": "Прогноз воды, %",
-      "type": "C_Option",
-      "characteristics": [
-        {
-          "type": "C_Integer",
-          "link": [
-            {
-              "type": "Integer",
-              "topicGet": "/devices/(1)/controls/water_forecast"
-            }
-          ]
-        }
-      ],
-      "visible": false
-    },
-    {
-      "name": "Всего запусков",
-      "type": "C_Option",
-      "characteristics": [
-        {
-          "type": "C_Integer",
-          "link": [
-            {
-              "type": "Integer",
-              "topicGet": "/devices/(1)/controls/cycles"
-            }
-          ]
-        }
-      ],
-      "visible": false
-    },
-    {
-      "name": "Wi-Fi, dBm",
-      "type": "C_Option",
-      "characteristics": [
-        {
-          "type": "C_Integer",
-          "link": [
-            {
-              "type": "Integer",
-              "topicGet": "/devices/(1)/controls/rssi"
-            }
-          ]
-        }
-      ],
-      "visible": false
-    },
+    }
+  ],
+  "options": [
     {
       "name": "Прошивка",
-      "type": "C_Option",
-      "characteristics": [
+      "type": "String",
+      "inputType": "STATUS",
+      "write": false,
+      "link": [
         {
-          "type": "C_String",
-          "link": [
-            {
-              "type": "String",
-              "topicGet": "/devices/(1)/controls/fw"
-            }
-          ]
+          "type": "String",
+          "topicGet": "/devices/(1)/controls/fw"
         }
-      ],
-      "visible": false
+      ]
     },
     {
       "name": "Доступно обновление ПО",
-      "type": "C_Option",
-      "characteristics": [
+      "type": "Boolean",
+      "inputType": "STATUS",
+      "write": false,
+      "link": [
         {
-          "type": "C_Boolean",
-          "link": [
-            {
-              "type": "Integer",
-              "topicGet": "/devices/(1)/controls/fw_update"
-            }
-          ]
+          "type": "Integer",
+          "topicGet": "/devices/(1)/controls/fw_update"
         }
-      ],
-      "visible": false
+      ]
+    },
+    {
+      "name": "Wi-Fi, dBm",
+      "type": "String",
+      "inputType": "STATUS",
+      "write": false,
+      "link": [
+        {
+          "type": "String",
+          "topicGet": "/devices/(1)/controls/rssi"
+        }
+      ]
+    },
+    {
+      "name": "Всего запусков",
+      "type": "String",
+      "inputType": "STATUS",
+      "write": false,
+      "link": [
+        {
+          "type": "String",
+          "topicGet": "/devices/(1)/controls/cycles"
+        }
+      ]
+    },
+    {
+      "name": "Как завершилась последняя программа",
+      "type": "String",
+      "inputType": "STATUS",
+      "write": false,
+      "link": [
+        {
+          "type": "String",
+          "topicGet": "/devices/(1)/controls/end_trigger"
+        }
+      ]
+    },
+    {
+      "name": "Тихий режим: осталось, мин",
+      "type": "String",
+      "inputType": "STATUS",
+      "write": false,
+      "link": [
+        {
+          "type": "String",
+          "topicGet": "/devices/(1)/controls/silence_left"
+        }
+      ]
+    },
+    {
+      "name": "Прогноз расхода энергии, %",
+      "type": "String",
+      "inputType": "STATUS",
+      "write": false,
+      "link": [
+        {
+          "type": "String",
+          "topicGet": "/devices/(1)/controls/energy_forecast"
+        }
+      ]
+    },
+    {
+      "name": "Прогноз расхода воды, %",
+      "type": "String",
+      "inputType": "STATUS",
+      "write": false,
+      "link": [
+        {
+          "type": "String",
+          "topicGet": "/devices/(1)/controls/water_forecast"
+        }
+      ]
     }
   ]
 }

@@ -13,6 +13,11 @@
 
 --keep-cfg переносит настройки блока CFG (токен Telegram и т. п.) из уже
 установленного правила, например /etc/wb-rules/dishwasher.js, в новое.
+
+Вид в Sprut.hub (на правило не влияют, по умолчанию выключены):
+    --sprut-programs Eco50,Quick65   плитки только у этих программ, остальные скрыты
+    --sprut-compact                  близкие параметры — в общих сервисах
+    --sprut-settings-options         настройки машины — опциями устройства со списками значений
 """
 import argparse
 import io
@@ -429,7 +434,92 @@ def short(title):
     return title.split(" (")[0]
 
 
-def build_template(m):
+# Запас к максимуму обратного отсчёта у «Мойки»: «До окончания» — это задержка старта плюс
+# время программы, а программа с опциями идёт дольше оценки.
+REMAINING_HEADROOM = 6 * 3600
+
+
+def named(name, chars):
+    """Сервис с несколькими характеристиками: у каждой своя подпись."""
+    return svc(name, "C_Option", chars)
+
+
+def status_option(name, ctrl, otype="String"):
+    """Опция устройства только для чтения: видна в настройках устройства (⚙), а не плиткой."""
+    return {"name": name, "type": otype, "inputType": "STATUS", "write": False,
+            "link": link(ctrl, "Integer" if otype == "Boolean" else "String")}
+
+
+def setting_title(s):
+    title = s["title"][len("Настройка: "):]
+    return title[:1].upper() + title[1:]
+
+
+def setting_option(s):
+    """Настройка машины как опция устройства: списки — с названиями значений, а не числами."""
+    opt = {"name": setting_title(s)}
+    if s["kind"] == "bool":
+        opt["type"] = "Boolean"
+    elif s["kind"] == "enum":
+        keys = sorted(s["values"])
+        # value обязателен вместе с values; текущее значение Sprut.hub берёт из топика
+        opt.update({"type": "Integer", "value": keys[0],
+                    "values": [{"value": k, "name": s["values"][k][1]} for k in keys]})
+    else:
+        opt.update({"type": "Integer", "minValue": s["min"] // s["scale"],
+                    "maxValue": s["max"] // s["scale"], "minStep": 1})
+        if s["units"] == "min":
+            opt["unit"] = "мин"
+    opt["write"] = True
+    opt["link"] = link(s["ctrl"], "Integer", writable_=True)
+    return opt
+
+
+def setting_service(s):
+    """Настройка машины как скрытый сервис (вид по умолчанию)."""
+    if s["kind"] == "bool":
+        return switch(s["title"], s["ctrl"], visible=False)
+    if s["kind"] == "enum":
+        keys = sorted(s["values"])
+        if keys == [0, 1]:
+            label = s.get("_switch_title") or "%s: %s" % (s["title"][len("Настройка: "):], s["values"][1][1])
+            return switch("Настройка: " + label, s["ctrl"], visible=False)
+        # с пропусками (например 0 и 2) перечисляем допустимые: Sprut.hub знает только диапазон
+        rng = ("%d–%d" % (keys[0], keys[-1]) if keys == list(range(keys[0], keys[-1] + 1))
+               else ", ".join(str(k) for k in keys))
+        return opt_int("%s (%s)" % (s["title"], rng), s["ctrl"], writable_=True,
+                       visible=False, minValue=keys[0], maxValue=keys[-1], minStep=1)
+    extra = {"unit": "мин"} if s["units"] == "min" else {}
+    return opt_int(s["title"], s["ctrl"], writable_=True, visible=False,
+                   minValue=s["min"] // s["scale"], maxValue=s["max"] // s["scale"], minStep=1, **extra)
+
+
+def pick_programs(m, spec):
+    """--sprut-programs: ключи программ через запятую -> ключи модели в заданном порядке."""
+    by_key = {p["key"].lower(): p["key"] for p in m["programs"]}
+    picked, unknown = [], []
+    for raw in spec.split(","):
+        key = raw.strip()
+        if not key:
+            continue
+        if key.lower() not in by_key:
+            unknown.append(key)
+        elif by_key[key.lower()] not in picked:
+            picked.append(by_key[key.lower()])
+    if unknown or not picked:
+        sys.exit("--sprut-programs: %s. Программы этой машины: %s" % (
+            "нет программы " + ", ".join(unknown) if unknown else "не указано ни одной программы",
+            ", ".join("%s (%s)" % (p["key"], p["title"]) for p in m["programs"])))
+    return picked
+
+
+def build_template(m, compact=False, settings_options=False, programs=None):
+    """Шаблон Sprut.hub.
+
+    compact          — близкие параметры собраны в общие сервисы (меньше плиток);
+    settings_options — настройки машины не скрытыми сервисами, а опциями устройства;
+    programs         — ключи программ, у которых остаётся плитка (в этом порядке), остальные скрыты.
+    """
     level_map = {"FILTER_OK": "100", "CHANGE_FILTER": "0;10"}
     features = m["features"]
     dish_event = "Dishcare.Dishwasher.Event."
@@ -441,28 +531,59 @@ def build_template(m):
         svc("Мойка", "Valve", [
             ch("Active", "run", writable_=True),
             ch("InUse", "running"),
-            ch("RemainingDuration", "remaining_sec", maxValue=86400),
+            ch("RemainingDuration", "remaining_sec", maxValue=m["delay_max"] + REMAINING_HEADROOM),
             ch("StatusFault", "alarm"),
         ]),
         switch("Питание", "power"),
     ]
-    services += [switch("Программа: " + p["title"], "prog_" + p["key"].lower()) for p in m["programs"]]
+    by_key = {p["key"]: p for p in m["programs"]}
+    shown = [by_key[k] for k in programs] if programs else m["programs"]
+    services += [switch("Программа: " + p["title"], "prog_" + p["key"].lower()) for p in shown]
+    services += [switch("Программа: " + p["title"], "prog_" + p["key"].lower(), visible=False)
+                 for p in m["programs"] if p not in shown]
     services += [switch(short(o["title"]), o["ctrl"]) for o in m["options"]]
-    if m["uids"]["StartInRelative"]:
+
+    has_delay = bool(m["uids"]["StartInRelative"])
+    delay = dict(minValue=0, maxValue=max(1, m["delay_max"] // 3600), minStep=1, unit="ч")
+    if compact:
+        if has_delay:
+            services.append(named("Отложенный старт", [
+                ch("C_Integer", "delay_h", writable_=True, name="Отложить на", **delay),
+                ch("C_String", "finish_at", "String", True, name="Завершить к (ЧЧ:ММ)"),
+            ]))
+        start_in = [ch("C_String", "start_in", "String", name="Старт через")]
+        if m["has"]["remoteStart"]:
+            start_in.append(ch("C_Boolean", "remote_start", name="Удалённый старт разрешён"))
         services += [
-            opt_int("Отложить старт, ч", "delay_h", writable_=True, minValue=0,
-                    maxValue=max(1, m["delay_max"] // 3600), minStep=1),
-            opt_str("Завершить к (ЧЧ:ММ)", "finish_at", writable_=True),
+            named("Состояние", [
+                ch("C_String", "state", "String", name="Состояние"),
+                ch("C_Integer", "progress", name="Прогресс", unit="%"),
+                ch("C_Boolean", "online", name="Связь с машиной"),
+            ]),
+            opt_str("Выполняется", "active_program"),
+            opt_str("Фаза", "phase"),
+            named("Осталось", [
+                ch("C_String", "remaining", "String", name="Осталось"),
+                ch("C_Integer", "remaining_min", name="Осталось минут"),
+            ]),
+            named("Старт через", start_in) if len(start_in) > 1 else opt_str("Старт через", "start_in"),
+            opt_str("Окончание", "end_time"),
         ]
-    services += [
-        opt_str("Состояние", "state"),
-        opt_str("Выполняется", "active_program"),
-        opt_str("Фаза", "phase"),
-        opt_int("Прогресс, %", "progress"),
-        opt_str("Осталось", "remaining"),
-        opt_str("Старт через", "start_in"),
-        opt_str("Окончание", "end_time"),
-    ]
+    else:
+        if has_delay:
+            services += [
+                opt_int("Отложить старт", "delay_h", writable_=True, **delay),
+                opt_str("Завершить к (ЧЧ:ММ)", "finish_at", writable_=True),
+            ]
+        services += [
+            opt_str("Состояние", "state"),
+            opt_str("Выполняется", "active_program"),
+            opt_str("Фаза", "phase"),
+            opt_int("Прогресс", "progress", unit="%"),
+            opt_str("Осталось", "remaining"),
+            opt_str("Старт через", "start_in"),
+            opt_str("Окончание", "end_time"),
+        ]
     if m["has"]["door"]:
         services.append(svc("Дверь", "ContactSensor", [ch("ContactSensorState", "door_open")]))
     services.append(svc("Мойка завершена", "OccupancySensor", [ch("OccupancyDetected", "finished")]))
@@ -488,48 +609,37 @@ def build_template(m):
     services += [
         opt_str("Последнее событие", "last_message"),
         opt_str("Последняя мойка", "finished_at"),
-        opt_bool("Связь с машиной", "online"),
     ]
-    if m["has"]["remoteStart"]:
-        services.append(opt_bool("Удалённый старт разрешён", "remote_start"))
-    # настройки машины — скрыты с рабочего стола
-    for s in m["settings"]:
-        if s["kind"] == "bool":
-            services.append(switch(s["title"], s["ctrl"], visible=False))
-        elif s["kind"] == "enum":
-            keys = sorted(s["values"])
-            if keys == [0, 1]:
-                label = s.get("_switch_title") or "%s: %s" % (s["title"][len("Настройка: "):], s["values"][1][1])
-                services.append(switch("Настройка: " + label, s["ctrl"], visible=False))
-            else:
-                # с пропусками (например 0 и 2) перечисляем допустимые: Sprut.hub знает только диапазон
-                rng = ("%d–%d" % (keys[0], keys[-1]) if keys == list(range(keys[0], keys[-1] + 1))
-                       else ", ".join(str(k) for k in keys))
-                services.append(opt_int("%s (%s)" % (s["title"], rng), s["ctrl"], writable_=True,
-                                        visible=False, minValue=keys[0], maxValue=keys[-1], minStep=1))
-        else:
-            lo, hi = s["min"] // s["scale"], s["max"] // s["scale"]
-            label = s["title"] + (", мин" if s["units"] == "min" else "")
-            services.append(opt_int(label, s["ctrl"], writable_=True, visible=False,
-                                    minValue=lo, maxValue=hi, minStep=1))
-    # диагностика
-    services += [
-        opt_str("Как завершилась последняя программа", "end_trigger", visible=False),
-        opt_int("Осталось, мин", "remaining_min", visible=False),
-        opt_int("Тихий режим: осталось, мин", "silence_left", visible=False),
-        opt_int("Прогноз энергии, %", "energy_forecast", visible=False),
-        opt_int("Прогноз воды, %", "water_forecast", visible=False),
-        opt_int("Всего запусков", "cycles", visible=False),
-        opt_int("Wi-Fi, dBm", "rssi", visible=False),
-        opt_str("Прошивка", "fw", visible=False),
-        opt_bool("Доступно обновление ПО", "fw_update", visible=False),
+    if not compact:
+        services.append(opt_bool("Связь с машиной", "online"))
+        if m["has"]["remoteStart"]:
+            services.append(opt_bool("Удалённый старт разрешён", "remote_start"))
+        # то же время числом; в компактном виде оно входит в сервис «Осталось»
+        services.append(opt_int("Осталось, мин", "remaining_min", visible=False))
+
+    # диагностика — опции устройства только для чтения, а не сервисы
+    options = [
+        status_option("Прошивка", "fw"),
+        status_option("Доступно обновление ПО", "fw_update", "Boolean"),
+        status_option("Wi-Fi, dBm", "rssi"),
+        status_option("Всего запусков", "cycles"),
+        status_option("Как завершилась последняя программа", "end_trigger"),
+        status_option("Тихий режим: осталось, мин", "silence_left"),
+        status_option("Прогноз расхода энергии, %", "energy_forecast"),
+        status_option("Прогноз расхода воды, %", "water_forecast"),
     ]
+    # настройки машины: скрытые сервисы или опции устройства
+    if settings_options:
+        options += [setting_option(s) for s in m["settings"]]
+    else:
+        services += [setting_service(s) for s in m["settings"]]
     return {
         "name": "Посудомоечная машина",
         "manufacturer": m["brand"],
         "model": "%s (hcpy)" % m["model"],
         "modelIds": ["/devices/(%s)/controls/run/meta/type" % WB_DEVICE],
         "services": services,
+        "options": options,
     }
 
 
@@ -541,6 +651,14 @@ def main():
     ap.add_argument("--keep-cfg", metavar="RULE.js",
                     help="перенести настройки CFG (Telegram и др.) из установленного правила, "
                          "например /etc/wb-rules/dishwasher.js")
+    ap.add_argument("--sprut-programs", metavar="КЛЮЧИ",
+                    help="Sprut.hub: плитки только у перечисленных программ (ключи через запятую, "
+                         "например Eco50,Quick65), в этом порядке; остальные программы скрыты")
+    ap.add_argument("--sprut-compact", action="store_true",
+                    help="Sprut.hub: собрать близкие параметры в общие сервисы (меньше плиток)")
+    ap.add_argument("--sprut-settings-options", action="store_true",
+                    help="Sprut.hub: настройки машины — опциями устройства со списками значений "
+                         "вместо скрытых сервисов")
     a = ap.parse_args()
 
     # utf-8-sig: Блокнот Windows может сохранить файл с BOM
@@ -548,6 +666,9 @@ def main():
         data = json.load(fh)
     devices = data if isinstance(data, list) else [data]
     m = build_model(pick_device(devices, a.name))
+    tiles = pick_programs(m, a.sprut_programs) if a.sprut_programs is not None else None
+    template = build_template(m, compact=a.sprut_compact, settings_options=a.sprut_settings_options,
+                              programs=tiles)
 
     os.makedirs(a.out, exist_ok=True)
     rule_path = os.path.join(a.out, "dishwasher.js")
@@ -560,10 +681,11 @@ def main():
     with io.open(rule_path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(rule)
     with io.open(tpl_path, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(json.dumps(build_template(m), ensure_ascii=False, indent=2) + "\n")
+        fh.write(json.dumps(template, ensure_ascii=False, indent=2) + "\n")
 
     print("Модель: %s %s, топики hcpy: homeconnect/%s/..." % (m["brand"], m["model"], clean_name(m["name"])))
-    print("Программы (%d): %s" % (len(m["programs"]), ", ".join(p["title"] for p in m["programs"])))
+    print("Программы (%d): %s" % (len(m["programs"]),
+                                  ", ".join("%s [%s]" % (p["title"], p["key"]) for p in m["programs"])))
     print("Опции (%d): %s" % (len(m["options"]), ", ".join(short(o["title"])[len("Опция: "):] for o in m["options"]) or "нет"))
     print("Настройки (%d): %s" % (len(m["settings"]), ", ".join(s["title"][len("Настройка: "):] for s in m["settings"]) or "нет"))
     if m["missing"]:
@@ -579,6 +701,12 @@ def main():
             print("Параметры старого правила, которых больше нет: %s" % ", ".join(gone))
     for w in m["warnings"]:
         print("Внимание: " + w)
+    if tiles:
+        print("Sprut.hub: плитки программ — %s; остальные скрыты" % ", ".join(tiles))
+    if a.sprut_settings_options and m["settings"]:
+        print("Sprut.hub: настройки машины — в опциях устройства (⚙). После добавления устройства "
+              "сверьте их с Wiren Board:\n  на живом хабе не проверено, что Sprut.hub не запишет "
+              "в машину начальные значения из шаблона.")
     print("\nГотово:\n  %s\n  %s" % (rule_path, tpl_path))
 
 
