@@ -8,11 +8,14 @@ hcpy_wb7/requirements-wb7.txt); без них эти тесты пропуска
 """
 import contextlib
 import copy
+import hashlib
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,7 +34,7 @@ import utils  # noqa: E402
 
 try:
     import hc2mqtt  # noqa: E402
-except ImportError:  # нет click / paho-mqtt / websocket-client / yaml
+except ImportError:  # нет click / paho-mqtt / websocket-client
     hc2mqtt = None
 
 
@@ -314,6 +317,73 @@ class Hc2mqttPublishing(unittest.TestCase):
         self.device.get.assert_not_called()
         self.command(b'[{"uid":539,"value":"On"}]', topic="homeconnect/dishwasher/set")
         self.device.get.assert_called_once_with("/ro/values", 1, "POST", [{"uid": 539, "value": "On"}])
+
+
+class Packaging(unittest.TestCase):
+    """Что именно ставится на контроллер: зависимости по хешам и hcpy с описанными отличиями."""
+
+    PIN = re.compile(r"^[a-z0-9-]+==[0-9][0-9a-z.]*$")
+    HASH = re.compile(r"^--hash=sha256:[0-9a-f]{64}$")
+
+    def pins(self, name):
+        """{пакет: число хешей}; каждая запись — точная версия и хотя бы один SHA-256."""
+        text = (ROOT / "hcpy_wb7" / name).read_text(encoding="utf-8")
+        lines = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+        entries = " ".join(ln.rstrip("\\").strip() for ln in lines)
+        found = {}
+        current = None
+        for word in entries.split():
+            if self.PIN.match(word):
+                current = word.split("==")[0]
+                found[current] = 0
+            else:
+                self.assertRegex(word, self.HASH, "%s: непонятная запись" % name)
+                self.assertIsNotNone(current)
+                found[current] += 1
+        self.assertTrue(found and all(found.values()), "%s: пакет без хеша" % name)
+        return found
+
+    def test_runtime_requirements_are_pinned_and_need_no_yaml(self):
+        self.assertEqual(sorted(self.pins("requirements-wb7.txt")),
+                         ["click", "click-config-file", "configobj", "paho-mqtt", "websocket-client"])
+
+    def test_build_requirements_are_pinned(self):
+        # paho-mqtt 1.6.1 собирается на контроллере из исходников: его сборщик тоже закреплён
+        self.assertEqual(sorted(self.pins("build-constraints-wb7.txt")), ["setuptools"])
+        installer = (ROOT / "hcpy_wb7" / "install_hcpy.sh").read_text(encoding="utf-8")
+        self.assertRegex(installer, r'--require-hashes \\\n\s+--build-constraints "\$SRC/build-constraints-wb7\.txt"')
+
+    @unittest.skipIf(hc2mqtt is None, "нет зависимостей hcpy (pip install -r hcpy_wb7/requirements-wb7.txt)")
+    def test_bridge_starts_without_yaml(self):
+        code = ("import sys; sys.modules['yaml'] = None; sys.path.insert(0, sys.argv[1]); "
+                "import hc2mqtt; assert 'HADiscovery' not in sys.modules")
+        r = subprocess.run([sys.executable, "-c", code, str(APP)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def upstream_hashes(self):
+        lines = (APP / "UPSTREAM.sha256").read_text(encoding="utf-8").splitlines()
+        return {name: digest for digest, name in (ln.split("  ", 1) for ln in lines)}
+
+    def test_vendored_files_are_listed(self):
+        files = {p.name for p in APP.iterdir() if p.is_file()}
+        self.assertEqual(files, set(self.upstream_hashes()) | {"VERSION", "UPSTREAM.sha256", "wb7-changes.patch"})
+
+    @unittest.skipIf(shutil.which("git") is None, "нужен git")
+    def test_patch_is_the_whole_difference_from_upstream(self):
+        """VERSION + wb7-changes.patch описывают hcpy полностью: откат патча даёт исходные файлы."""
+        expected = self.upstream_hashes()
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in expected:
+                shutil.copy(str(APP / name), tmp)
+            r = subprocess.run(["git", "apply", "-R", "--whitespace=nowarn", str(APP / "wb7-changes.patch")],
+                               cwd=tmp, capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            actual = {name: hashlib.sha256((Path(tmp) / name).read_bytes()).hexdigest() for name in expected}
+        self.assertEqual(actual, expected, "hcpy_wb7/app изменён, а wb7-changes.patch не обновлён")
+        patched = set(re.findall(r"^diff --git a/(\S+) ", (APP / "wb7-changes.patch").read_text(encoding="utf-8"), re.M))
+        version = (APP / "VERSION").read_text(encoding="utf-8")
+        for name in patched:
+            self.assertIn(name + ":", version, "VERSION не упоминает изменённый файл")
 
 
 if __name__ == "__main__":

@@ -1,2 +1,14 @@
 hcpy 590f1e71a75c91b36ea77eab7b5698c42ace4451 (github.com/hcpy2-0/hcpy)
-+ wb7-changes.patch: pycryptodome не нужен для TLS-приборов
++ wb7-changes.patch — все отличия от этой версии:
+  HCSocket.py: pycryptodome нужен только приборам с AES (порт 80); для TLS-PSK он не ставится.
+  HCDevice.py: случайные байты из os.urandom; отправка сообщений под блокировкой (msgID не
+               повторяется при отправке из разных потоков); признак готовности после ответа на
+               /ro/allMandatoryValues, без ответа за 10 с соединение закрывается.
+  hc2mqtt.py:  мост MQTT переписан: снимок состояния каждого прибора публикуется между
+               LWT offline и online, исчезнувшие значения очищаются; команды проверяются до
+               отправки, сохранённые брокером (retained) и пришедшие без связи с прибором
+               отбрасываются; HADiscovery (и PyYAML) загружается только с --ha-discovery.
+  discovery.yaml: только окончания строк (CRLF -> LF). Остальные файлы не изменены.
+UPSTREAM.sha256 — хеши исходных файлов (после CRLF -> LF). Проверка: скопировать *.py, LICENSE и
+discovery.yaml во временную папку, выполнить там `git apply -R wb7-changes.patch` и
+`sha256sum -c UPSTREAM.sha256`. То же делает tests/test_hcpy_contract.py.

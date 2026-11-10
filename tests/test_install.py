@@ -33,7 +33,7 @@ def why_skip():
     if sys.version_info < (3, 13) or not getattr(ssl, "HAS_PSK", False):
         return "нужен Python 3.13+ с TLS-PSK"
     try:
-        import click, click_config_file, configobj, paho.mqtt.client, websocket, yaml  # noqa: F401
+        import click, click_config_file, configobj, paho.mqtt.client, websocket  # noqa: F401
     except ImportError:
         return "нет зависимостей hcpy (pip install --require-hashes -r hcpy_wb7/requirements-wb7.txt)"
     return None
@@ -159,7 +159,8 @@ class Installer(unittest.TestCase):
         calls = self.calls()
         self.assertIn("/0.11.32/uv-armv7-unknown-linux-gnueabihf.tar.gz", calls)
         self.assertIn("uv python install 3.13 --no-bin", calls)
-        self.assertIn("--require-hashes -r", calls)
+        self.assertIn("--require-hashes --build-constraints %s/build-constraints-wb7.txt -r %s/requirements-wb7.txt\n"
+                      % (self.src, self.src), calls)
         self.assertIn("uv cache clean", calls)
         self.assertIn("mosquitto_sub -h 127.0.0.1 -R -W 32 -t homeconnect/dishwasher/LWT -v\n600\n", calls)
         self.assertNotIn(password, calls)

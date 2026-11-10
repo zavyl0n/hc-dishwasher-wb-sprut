@@ -268,7 +268,8 @@ PY
 say "3/5 hcpy ($(head -1 "$SRC/app/VERSION" 2>/dev/null))"
 cp -r "$SRC/app" "$RELEASE/app"
 say "4/5 зависимости"
-"$UV" pip install --python "$PYTHON" --require-hashes -r "$SRC/requirements-wb7.txt"
+"$UV" pip install --python "$PYTHON" --require-hashes \
+    --build-constraints "$SRC/build-constraints-wb7.txt" -r "$SRC/requirements-wb7.txt"
 "$UV" cache clean >/dev/null 2>&1 || true
 (cd "$RELEASE/app" && "$PYTHON" -c "import hc2mqtt")
 echo "hcpy загружается без ошибок"
