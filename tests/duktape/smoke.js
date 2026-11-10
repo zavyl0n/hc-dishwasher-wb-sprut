@@ -57,6 +57,17 @@
   w.advance(60 * MIN);
   ok(/не выгружена/.test(w.last()), "напоминание: " + w.last());
 
+  // мойка закончилась, пока hcpy переподключался к машине: снимок приходит между LWT offline и online
+  op("Run");
+  eq(w.get("finished"), false, "новая мойка сбрасывает «завершена»");
+  w.mqtt(B + "/LWT", "offline", false);
+  for (k in READY) if (READY.hasOwnProperty(k)) hc(k, "");
+  for (k in READY) if (READY.hasOwnProperty(k) && k !== "bsh_common_status_operationstate") hc(k, READY[k]);
+  op("Finished");
+  ok(/Мойка завершена: Эко 50°/.test(w.last()), "окончание после разрыва связи: " + w.last());
+  w.mqtt(B + "/LWT", "online", false);
+  eq(w.get("finished"), true, "«завершена» после разрыва связи");
+
   // события и аварии
   w.mqtt(B + "/event/bsh_common_event_aquastopoccured", JSON.stringify({ event_type: "Present" }), false);
   eq(w.get("aquastop"), true, "AquaStop");

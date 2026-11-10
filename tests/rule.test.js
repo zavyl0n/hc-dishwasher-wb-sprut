@@ -558,6 +558,81 @@ for (const file of ["rule/dishwasher.js", "examples/SMV4HVX31E/dishwasher.js"]) 
         assert.ok(!e.telegram.some(t => /не выгружена/.test(t)));
       });
 
+      // Как DeviceChannel в hcpy: LWT offline, пустые значения, снимок по алфавиту ключей, LWT online.
+      const reconnect = (e, snapshot, lwt) => {
+        e.mqtt(lwt || B + "/LWT", "offline");
+        Object.keys(READY).forEach(k => hc(e, k, ""));
+        const st = Object.assign({}, READY, snapshot);
+        Object.keys(st).sort().forEach(k => hc(e, k, st[k]));
+        if (lwt) e.mqtt(lwt, "online");
+        e.mqtt(B + "/LWT", "online");
+      };
+
+      it("мойка закончилась, пока не было связи с машиной: «завершена» и напоминание приходят", () => {
+        const e = boot(file, TG);
+        op(e, "Run");
+        e.advance(3000);
+        reconnect(e, { bsh_common_status_operationstate: "Finished" });
+        assert.equal(e.get("finished"), true);
+        assert.equal(e.get("running"), false);
+        assert.match(e.get("finished_at"), /\(Эко 50°\)$/);
+        assert.equal(e.telegram.filter(t => /Мойка завершена: Эко 50°\. Можно разгружать/.test(t)).length, 1);
+        e.advance(60 * MIN);
+        assert.equal(e.telegram.filter(t => /не выгружена/.test(t)).length, 1);
+        noErrors(e);
+      });
+
+      it("то же при перезапуске службы hcpy", () => {
+        const e = boot(file, TG);
+        op(e, "Run");
+        e.advance(3000);
+        reconnect(e, { bsh_common_status_operationstate: "Finished" }, "homeconnect/LWT");
+        assert.equal(e.get("finished"), true);
+        assert.equal(e.telegram.filter(t => /Мойка завершена/.test(t)).length, 1);
+      });
+
+      it("после разрыва состояние то же — повторных уведомлений нет", () => {
+        const e = boot(file, TG);
+        op(e, "Run");
+        e.advance(3000);
+        reconnect(e, { bsh_common_status_operationstate: "Run" });
+        e.advance(5000);
+        assert.equal(e.telegram.filter(t => /Мойка началась/.test(t)).length, 1);
+        op(e, "Finished");
+        reconnect(e, { bsh_common_status_operationstate: "Finished" });
+        reconnect(e, { bsh_common_status_operationstate: "Finished" });
+        assert.equal(e.telegram.filter(t => /Мойка завершена/.test(t)).length, 1);
+      });
+
+      it("мойка началась, пока не было связи: уведомление о старте", () => {
+        const e = boot(file, TG);
+        reconnect(e, { bsh_common_status_operationstate: "Run" });
+        e.advance(3000);
+        assert.equal(e.telegram.filter(t => /Мойка началась: Эко 50°/.test(t)).length, 1);
+      });
+
+      it("мойка целиком прошла без связи: одно уведомление об окончании", () => {
+        const e = boot(file, TG);
+        reconnect(e, { bsh_common_status_operationstate: "Finished" });
+        assert.equal(e.get("finished"), true);
+        assert.deepEqual(e.telegram.filter(t => /Мойка/.test(t)).length, 1);
+        assert.match(e.telegram.filter(t => /Мойка/.test(t))[0], /Мойка завершена/);
+      });
+
+      it("wb-rules запущен во время мойки, затем разрыв и окончание: «завершена» приходит", () => {
+        const e = boot(file, Object.assign({ state: { bsh_common_status_operationstate: "Run" } }, TG));
+        assert.deepEqual(e.telegram, []);
+        reconnect(e, { bsh_common_status_operationstate: "Finished" });
+        assert.equal(e.telegram.filter(t => /Мойка завершена/.test(t)).length, 1);
+      });
+
+      it("снимок после разрыва без изменений и сохранённый брокером снимок событий не создают", () => {
+        const e = boot(file, Object.assign({ state: { bsh_common_status_operationstate: "Finished" } }, TG));
+        reconnect(e, { bsh_common_status_operationstate: "Finished" });
+        e.advance(120 * MIN);
+        assert.ok(!e.telegram.some(t => /Мойка|не выгружена/.test(t)));
+      });
+
       it("notifyStart: false — о старте только в «Последнем событии»", () => {
         const e = boot(file, { cfg: { tgToken: "123:TEST", tgChatId: "42", notifyStart: false } });
         op(e, "Run");
