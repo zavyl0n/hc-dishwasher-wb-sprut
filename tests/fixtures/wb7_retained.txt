@@ -1,0 +1,336 @@
+# Retained-сообщения устройства dishwasher с настоящего Wiren Board 7 (wb-rules, правило rule/dishwasher.js):
+# «топик значение», по одному в строке, в том порядке, в каком их отдал брокер.
+# Значения прошивки, счётчика запусков, Wi-Fi и времени заменены выдуманными.
+/devices/dishwasher/meta {"driver":"wb-rules","title":{"en":"Посудомоечная машина"}}
+/devices/dishwasher/meta/name Посудомоечная машина
+/devices/dishwasher/meta/driver wb-rules
+/devices/dishwasher/controls/abort/meta {"order":1,"readonly":false,"title":{"en":"■ Отменить программу"},"type":"pushbutton"}
+/devices/dishwasher/controls/abort/meta/type pushbutton
+/devices/dishwasher/controls/abort/meta/order 1
+/devices/dishwasher/controls/abort/meta/readonly 0
+/devices/dishwasher/controls/active_program Интенсивная 70°
+/devices/dishwasher/controls/active_program/meta {"order":2,"readonly":true,"title":{"en":"Выполняется"},"type":"text"}
+/devices/dishwasher/controls/active_program/meta/type text
+/devices/dishwasher/controls/active_program/meta/order 2
+/devices/dishwasher/controls/active_program/meta/readonly 1
+/devices/dishwasher/controls/alarm 0
+/devices/dishwasher/controls/alarm/meta {"order":3,"readonly":true,"title":{"en":"Авария"},"type":"alarm"}
+/devices/dishwasher/controls/alarm/meta/readonly 1
+/devices/dishwasher/controls/alarm/meta/type alarm
+/devices/dishwasher/controls/alarm/meta/order 3
+/devices/dishwasher/controls/alarm_text Нет
+/devices/dishwasher/controls/alarm_text/meta {"order":4,"readonly":true,"title":{"en":"Аварии"},"type":"text"}
+/devices/dishwasher/controls/alarm_text/meta/type text
+/devices/dishwasher/controls/alarm_text/meta/order 4
+/devices/dishwasher/controls/alarm_text/meta/readonly 1
+/devices/dishwasher/controls/aquastop 0
+/devices/dishwasher/controls/aquastop/meta {"order":5,"readonly":true,"title":{"en":"AquaStop (протечка)"},"type":"alarm"}
+/devices/dishwasher/controls/aquastop/meta/type alarm
+/devices/dishwasher/controls/aquastop/meta/order 5
+/devices/dishwasher/controls/aquastop/meta/readonly 1
+/devices/dishwasher/controls/care_needed 0
+/devices/dishwasher/controls/care_needed/meta {"order":6,"readonly":true,"title":{"en":"Нужен уход за машиной"},"type":"switch"}
+/devices/dishwasher/controls/care_needed/meta/type switch
+/devices/dishwasher/controls/care_needed/meta/order 6
+/devices/dishwasher/controls/care_needed/meta/readonly 1
+/devices/dishwasher/controls/care_runs 12
+/devices/dishwasher/controls/care_runs/meta {"order":7,"readonly":true,"title":{"en":"Циклов до ухода за машиной"},"type":"value"}
+/devices/dishwasher/controls/care_runs/meta/type value
+/devices/dishwasher/controls/care_runs/meta/order 7
+/devices/dishwasher/controls/care_runs/meta/readonly 1
+/devices/dishwasher/controls/cycles 123
+/devices/dishwasher/controls/cycles/meta {"order":8,"readonly":true,"title":{"en":"Всего запусков"},"type":"value"}
+/devices/dishwasher/controls/cycles/meta/type value
+/devices/dishwasher/controls/cycles/meta/order 8
+/devices/dishwasher/controls/cycles/meta/readonly 1
+/devices/dishwasher/controls/delay_h 0
+/devices/dishwasher/controls/delay_h/meta {"max":24,"min":0,"order":9,"readonly":false,"title":{"en":"Отложить старт, ч"},"type":"range"}
+/devices/dishwasher/controls/delay_h/meta/type range
+/devices/dishwasher/controls/delay_h/meta/max 24
+/devices/dishwasher/controls/delay_h/meta/min 0
+/devices/dishwasher/controls/delay_h/meta/order 9
+/devices/dishwasher/controls/delay_h/meta/readonly 0
+/devices/dishwasher/controls/door_open 0
+/devices/dishwasher/controls/door_open/meta {"order":10,"readonly":true,"title":{"en":"Дверь открыта"},"type":"switch"}
+/devices/dishwasher/controls/door_open/meta/order 10
+/devices/dishwasher/controls/door_open/meta/readonly 1
+/devices/dishwasher/controls/door_open/meta/type switch
+/devices/dishwasher/controls/end_time 14:48
+/devices/dishwasher/controls/end_time/meta {"order":11,"readonly":true,"title":{"en":"Окончание"},"type":"text"}
+/devices/dishwasher/controls/end_time/meta/type text
+/devices/dishwasher/controls/end_time/meta/order 11
+/devices/dishwasher/controls/end_time/meta/readonly 1
+/devices/dishwasher/controls/end_trigger Завершена нормально
+/devices/dishwasher/controls/end_trigger/meta {"order":12,"readonly":true,"title":{"en":"Последняя программа"},"type":"text"}
+/devices/dishwasher/controls/end_trigger/meta/type text
+/devices/dishwasher/controls/end_trigger/meta/order 12
+/devices/dishwasher/controls/end_trigger/meta/readonly 1
+/devices/dishwasher/controls/energy_forecast 66
+/devices/dishwasher/controls/energy_forecast/meta {"order":13,"readonly":true,"title":{"en":"Прогноз расхода энергии"},"type":"value","units":"%"}
+/devices/dishwasher/controls/energy_forecast/meta/type value
+/devices/dishwasher/controls/energy_forecast/meta/order 13
+/devices/dishwasher/controls/energy_forecast/meta/readonly 1
+/devices/dishwasher/controls/filter_check 0
+/devices/dishwasher/controls/filter_check/meta {"order":14,"readonly":true,"title":{"en":"Проверить фильтр"},"type":"switch"}
+/devices/dishwasher/controls/filter_check/meta/type switch
+/devices/dishwasher/controls/filter_check/meta/order 14
+/devices/dishwasher/controls/filter_check/meta/readonly 1
+/devices/dishwasher/controls/finish_at/meta {"order":15,"readonly":false,"title":{"en":"Завершить к (ЧЧ:ММ, пусто — не использовать)"},"type":"text"}
+/devices/dishwasher/controls/finish_at/meta/type text
+/devices/dishwasher/controls/finish_at/meta/order 15
+/devices/dishwasher/controls/finish_at/meta/readonly 0
+/devices/dishwasher/controls/finished 0
+/devices/dishwasher/controls/finished/meta {"order":16,"readonly":true,"title":{"en":"Мойка завершена, не разгружена"},"type":"switch"}
+/devices/dishwasher/controls/finished/meta/type switch
+/devices/dishwasher/controls/finished/meta/order 16
+/devices/dishwasher/controls/finished/meta/readonly 1
+/devices/dishwasher/controls/finished_at 01.02 12:34 (Интенсивная 70°)
+/devices/dishwasher/controls/finished_at/meta {"order":17,"readonly":true,"title":{"en":"Последняя мойка завершена"},"type":"text"}
+/devices/dishwasher/controls/finished_at/meta/type text
+/devices/dishwasher/controls/finished_at/meta/order 17
+/devices/dishwasher/controls/finished_at/meta/readonly 1
+/devices/dishwasher/controls/fw 1.2.3.4
+/devices/dishwasher/controls/fw/meta {"order":18,"readonly":true,"title":{"en":"Прошивка"},"type":"text"}
+/devices/dishwasher/controls/fw/meta/readonly 1
+/devices/dishwasher/controls/fw/meta/type text
+/devices/dishwasher/controls/fw/meta/order 18
+/devices/dishwasher/controls/fw_update 0
+/devices/dishwasher/controls/fw_update/meta {"order":19,"readonly":true,"title":{"en":"Доступно обновление ПО"},"type":"switch"}
+/devices/dishwasher/controls/fw_update/meta/type switch
+/devices/dishwasher/controls/fw_update/meta/order 19
+/devices/dishwasher/controls/fw_update/meta/readonly 1
+/devices/dishwasher/controls/last_message 01.02 13:10  Программу нельзя сменить во время мойки
+/devices/dishwasher/controls/last_message/meta {"order":20,"readonly":true,"title":{"en":"Последнее событие"},"type":"text"}
+/devices/dishwasher/controls/last_message/meta/type text
+/devices/dishwasher/controls/last_message/meta/order 20
+/devices/dishwasher/controls/last_message/meta/readonly 1
+/devices/dishwasher/controls/online 1
+/devices/dishwasher/controls/online/meta {"order":21,"readonly":true,"title":{"en":"Связь с машиной"},"type":"switch"}
+/devices/dishwasher/controls/online/meta/type switch
+/devices/dishwasher/controls/online/meta/order 21
+/devices/dishwasher/controls/online/meta/readonly 1
+/devices/dishwasher/controls/opt_extradry 0
+/devices/dishwasher/controls/opt_extradry/meta {"order":22,"readonly":false,"title":{"en":"Опция: Extra Dry (доп. сушка)"},"type":"switch"}
+/devices/dishwasher/controls/opt_extradry/meta/type switch
+/devices/dishwasher/controls/opt_extradry/meta/order 22
+/devices/dishwasher/controls/opt_extradry/meta/readonly 0
+/devices/dishwasher/controls/opt_halfload 0
+/devices/dishwasher/controls/opt_halfload/meta {"order":23,"readonly":false,"title":{"en":"Опция: половинная загрузка"},"type":"switch"}
+/devices/dishwasher/controls/opt_halfload/meta/type switch
+/devices/dishwasher/controls/opt_halfload/meta/order 23
+/devices/dishwasher/controls/opt_halfload/meta/readonly 0
+/devices/dishwasher/controls/opt_silence 0
+/devices/dishwasher/controls/opt_silence/meta {"order":24,"readonly":false,"title":{"en":"Опция: тихий режим (Silence on demand)"},"type":"switch"}
+/devices/dishwasher/controls/opt_silence/meta/type switch
+/devices/dishwasher/controls/opt_silence/meta/order 24
+/devices/dishwasher/controls/opt_silence/meta/readonly 0
+/devices/dishwasher/controls/opt_variospeed 0
+/devices/dishwasher/controls/opt_variospeed/meta {"order":25,"readonly":false,"title":{"en":"Опция: VarioSpeed+ (быстрее)"},"type":"switch"}
+/devices/dishwasher/controls/opt_variospeed/meta/type switch
+/devices/dishwasher/controls/opt_variospeed/meta/order 25
+/devices/dishwasher/controls/opt_variospeed/meta/readonly 0
+/devices/dishwasher/controls/phase Мойка
+/devices/dishwasher/controls/phase/meta {"order":26,"readonly":true,"title":{"en":"Фаза"},"type":"text"}
+/devices/dishwasher/controls/phase/meta/order 26
+/devices/dishwasher/controls/phase/meta/readonly 1
+/devices/dishwasher/controls/phase/meta/type text
+/devices/dishwasher/controls/power 1
+/devices/dishwasher/controls/power/meta {"order":27,"readonly":false,"title":{"en":"Питание"},"type":"switch"}
+/devices/dishwasher/controls/power/meta/type switch
+/devices/dishwasher/controls/power/meta/order 27
+/devices/dishwasher/controls/power/meta/readonly 0
+/devices/dishwasher/controls/prog_001 0
+/devices/dishwasher/controls/prog_001/meta {"order":28,"readonly":false,"title":{"en":"Программа: Избранное"},"type":"switch"}
+/devices/dishwasher/controls/prog_001/meta/order 28
+/devices/dishwasher/controls/prog_001/meta/readonly 0
+/devices/dishwasher/controls/prog_001/meta/type switch
+/devices/dishwasher/controls/prog_auto2 0
+/devices/dishwasher/controls/prog_auto2/meta {"order":29,"readonly":false,"title":{"en":"Программа: Авто 45–65°"},"type":"switch"}
+/devices/dishwasher/controls/prog_auto2/meta/type switch
+/devices/dishwasher/controls/prog_auto2/meta/order 29
+/devices/dishwasher/controls/prog_auto2/meta/readonly 0
+/devices/dishwasher/controls/prog_eco50 0
+/devices/dishwasher/controls/prog_eco50/meta {"order":30,"readonly":false,"title":{"en":"Программа: Эко 50°"},"type":"switch"}
+/devices/dishwasher/controls/prog_eco50/meta/type switch
+/devices/dishwasher/controls/prog_eco50/meta/order 30
+/devices/dishwasher/controls/prog_eco50/meta/readonly 0
+/devices/dishwasher/controls/prog_intensiv70 1
+/devices/dishwasher/controls/prog_intensiv70/meta {"order":31,"readonly":false,"title":{"en":"Программа: Интенсивная 70°"},"type":"switch"}
+/devices/dishwasher/controls/prog_intensiv70/meta/type switch
+/devices/dishwasher/controls/prog_intensiv70/meta/order 31
+/devices/dishwasher/controls/prog_intensiv70/meta/readonly 0
+/devices/dishwasher/controls/prog_machinecare 0
+/devices/dishwasher/controls/prog_machinecare/meta {"order":32,"readonly":false,"title":{"en":"Программа: Уход за машиной"},"type":"switch"}
+/devices/dishwasher/controls/prog_machinecare/meta/type switch
+/devices/dishwasher/controls/prog_machinecare/meta/order 32
+/devices/dishwasher/controls/prog_machinecare/meta/readonly 0
+/devices/dishwasher/controls/prog_nightwash 0
+/devices/dishwasher/controls/prog_nightwash/meta {"order":33,"readonly":false,"title":{"en":"Программа: Тихая (ночная)"},"type":"switch"}
+/devices/dishwasher/controls/prog_nightwash/meta/readonly 0
+/devices/dishwasher/controls/prog_nightwash/meta/type switch
+/devices/dishwasher/controls/prog_nightwash/meta/order 33
+/devices/dishwasher/controls/prog_prerinse 0
+/devices/dishwasher/controls/prog_prerinse/meta {"order":34,"readonly":false,"title":{"en":"Программа: Предварительное ополаскивание"},"type":"switch"}
+/devices/dishwasher/controls/prog_prerinse/meta/type switch
+/devices/dishwasher/controls/prog_prerinse/meta/order 34
+/devices/dishwasher/controls/prog_prerinse/meta/readonly 0
+/devices/dishwasher/controls/prog_quick65 0
+/devices/dishwasher/controls/prog_quick65/meta {"order":35,"readonly":false,"title":{"en":"Программа: Быстрая 65°"},"type":"switch"}
+/devices/dishwasher/controls/prog_quick65/meta/type switch
+/devices/dishwasher/controls/prog_quick65/meta/order 35
+/devices/dishwasher/controls/prog_quick65/meta/readonly 0
+/devices/dishwasher/controls/program 8192
+/devices/dishwasher/controls/program/meta {"enum":{"32828":{"en":"001","ru":"Избранное"},"8192":{"en":"Intensiv70","ru":"Интенсивная 70°"},"8195":{"en":"Auto2","ru":"Авто 45–65°"},"8196":{"en":"Eco50","ru":"Эко 50°"},"8200":{"en":"PreRinse","ru":"Предварительное ополаскивание"},"8202":{"en":"NightWash","ru":"Тихая (ночная)"},"8203":{"en":"Quick65","ru":"Быстрая 65°"},"8215":{"en":"MachineCare","ru":"Уход за машиной"}},"order":36,"readonly":false,"title":{"en":"Программа"},"type":"value"}
+/devices/dishwasher/controls/program/meta/readonly 0
+/devices/dishwasher/controls/program/meta/type value
+/devices/dishwasher/controls/program/meta/order 36
+/devices/dishwasher/controls/progress 27
+/devices/dishwasher/controls/progress/meta {"order":37,"readonly":true,"title":{"en":"Прогресс"},"type":"value","units":"%"}
+/devices/dishwasher/controls/progress/meta/type value
+/devices/dishwasher/controls/progress/meta/order 37
+/devices/dishwasher/controls/progress/meta/readonly 1
+/devices/dishwasher/controls/remaining 1 ч 38 мин
+/devices/dishwasher/controls/remaining/meta {"order":38,"readonly":true,"title":{"en":"Осталось"},"type":"text"}
+/devices/dishwasher/controls/remaining/meta/readonly 1
+/devices/dishwasher/controls/remaining/meta/type text
+/devices/dishwasher/controls/remaining/meta/order 38
+/devices/dishwasher/controls/remaining_min 98
+/devices/dishwasher/controls/remaining_min/meta {"order":39,"readonly":true,"title":{"en":"Осталось, мин"},"type":"value","units":"min"}
+/devices/dishwasher/controls/remaining_min/meta/type value
+/devices/dishwasher/controls/remaining_min/meta/order 39
+/devices/dishwasher/controls/remaining_min/meta/readonly 1
+/devices/dishwasher/controls/remaining_sec 5880
+/devices/dishwasher/controls/remaining_sec/meta {"order":40,"readonly":true,"title":{"en":"До окончания, с (с учётом отложенного старта)"},"type":"value","units":"s"}
+/devices/dishwasher/controls/remaining_sec/meta/type value
+/devices/dishwasher/controls/remaining_sec/meta/order 40
+/devices/dishwasher/controls/remaining_sec/meta/readonly 1
+/devices/dishwasher/controls/remote_start 1
+/devices/dishwasher/controls/remote_start/meta {"order":41,"readonly":true,"title":{"en":"Удалённый старт разрешён"},"type":"switch"}
+/devices/dishwasher/controls/remote_start/meta/type switch
+/devices/dishwasher/controls/remote_start/meta/order 41
+/devices/dishwasher/controls/remote_start/meta/readonly 1
+/devices/dishwasher/controls/rinse_empty 0
+/devices/dishwasher/controls/rinse_empty/meta {"order":42,"readonly":true,"title":{"en":"Нет ополаскивателя"},"type":"alarm"}
+/devices/dishwasher/controls/rinse_empty/meta/type alarm
+/devices/dishwasher/controls/rinse_empty/meta/order 42
+/devices/dishwasher/controls/rinse_empty/meta/readonly 1
+/devices/dishwasher/controls/rinse_level 100
+/devices/dishwasher/controls/rinse_level/meta {"order":43,"readonly":true,"title":{"en":"Ополаскиватель, уровень"},"type":"value","units":"%"}
+/devices/dishwasher/controls/rinse_level/meta/type value
+/devices/dishwasher/controls/rinse_level/meta/order 43
+/devices/dishwasher/controls/rinse_level/meta/readonly 1
+/devices/dishwasher/controls/rinse_low 0
+/devices/dishwasher/controls/rinse_low/meta {"order":44,"readonly":true,"title":{"en":"Ополаскиватель заканчивается"},"type":"switch"}
+/devices/dishwasher/controls/rinse_low/meta/type switch
+/devices/dishwasher/controls/rinse_low/meta/order 44
+/devices/dishwasher/controls/rinse_low/meta/readonly 1
+/devices/dishwasher/controls/rssi -60
+/devices/dishwasher/controls/rssi/meta {"order":45,"readonly":true,"title":{"en":"Wi-Fi сигнал"},"type":"value","units":"dBm"}
+/devices/dishwasher/controls/rssi/meta/type value
+/devices/dishwasher/controls/rssi/meta/order 45
+/devices/dishwasher/controls/rssi/meta/readonly 1
+/devices/dishwasher/controls/run 1
+/devices/dishwasher/controls/run/meta {"order":46,"readonly":false,"title":{"en":"Мойка (вкл — старт, выкл — отмена)"},"type":"switch"}
+/devices/dishwasher/controls/run/meta/type switch
+/devices/dishwasher/controls/run/meta/order 46
+/devices/dishwasher/controls/run/meta/readonly 0
+/devices/dishwasher/controls/running 1
+/devices/dishwasher/controls/running/meta {"order":47,"readonly":true,"title":{"en":"Программа запущена"},"type":"switch"}
+/devices/dishwasher/controls/running/meta/type switch
+/devices/dishwasher/controls/running/meta/order 47
+/devices/dishwasher/controls/running/meta/readonly 1
+/devices/dishwasher/controls/salt_empty 0
+/devices/dishwasher/controls/salt_empty/meta {"order":48,"readonly":true,"title":{"en":"Нет соли"},"type":"alarm"}
+/devices/dishwasher/controls/salt_empty/meta/order 48
+/devices/dishwasher/controls/salt_empty/meta/readonly 1
+/devices/dishwasher/controls/salt_empty/meta/type alarm
+/devices/dishwasher/controls/salt_level 100
+/devices/dishwasher/controls/salt_level/meta {"order":49,"readonly":true,"title":{"en":"Соль, уровень"},"type":"value","units":"%"}
+/devices/dishwasher/controls/salt_level/meta/order 49
+/devices/dishwasher/controls/salt_level/meta/readonly 1
+/devices/dishwasher/controls/salt_level/meta/type value
+/devices/dishwasher/controls/salt_low 0
+/devices/dishwasher/controls/salt_low/meta {"order":50,"readonly":true,"title":{"en":"Соль заканчивается"},"type":"switch"}
+/devices/dishwasher/controls/salt_low/meta/type switch
+/devices/dishwasher/controls/salt_low/meta/order 50
+/devices/dishwasher/controls/salt_low/meta/readonly 1
+/devices/dishwasher/controls/set_cloud 1
+/devices/dishwasher/controls/set_cloud/meta {"order":51,"readonly":false,"title":{"en":"Настройка: связь с облаком Home Connect"},"type":"switch"}
+/devices/dishwasher/controls/set_cloud/meta/type switch
+/devices/dishwasher/controls/set_cloud/meta/order 51
+/devices/dishwasher/controls/set_cloud/meta/readonly 0
+/devices/dishwasher/controls/set_ecodefault 1
+/devices/dishwasher/controls/set_ecodefault/meta {"enum":{"0":{"en":"LastProgram","ru":"Последняя"},"1":{"en":"EcoAsDefault","ru":"Эко 50°"}},"order":52,"readonly":false,"title":{"en":"Настройка: программа при включении"},"type":"value"}
+/devices/dishwasher/controls/set_ecodefault/meta/type value
+/devices/dishwasher/controls/set_ecodefault/meta/order 52
+/devices/dishwasher/controls/set_ecodefault/meta/readonly 0
+/devices/dishwasher/controls/set_extradry 0
+/devices/dishwasher/controls/set_extradry/meta {"order":53,"readonly":false,"title":{"en":"Настройка: Extra Dry всегда"},"type":"switch"}
+/devices/dishwasher/controls/set_extradry/meta/type switch
+/devices/dishwasher/controls/set_extradry/meta/order 53
+/devices/dishwasher/controls/set_extradry/meta/readonly 0
+/devices/dishwasher/controls/set_hardness 3
+/devices/dishwasher/controls/set_hardness/meta {"enum":{"0":{"en":"H00","ru":"0 (без соли)"},"1":{"en":"H01","ru":"1"},"2":{"en":"H02","ru":"2"},"3":{"en":"H03","ru":"3"},"4":{"en":"H04","ru":"4"},"5":{"en":"H05","ru":"5"},"6":{"en":"H06","ru":"6"},"7":{"en":"H07","ru":"7"}},"order":54,"readonly":false,"title":{"en":"Настройка: жёсткость воды"},"type":"value"}
+/devices/dishwasher/controls/set_hardness/meta/type value
+/devices/dishwasher/controls/set_hardness/meta/order 54
+/devices/dishwasher/controls/set_hardness/meta/readonly 0
+/devices/dishwasher/controls/set_hotwater 0
+/devices/dishwasher/controls/set_hotwater/meta {"enum":{"0":{"en":"ColdWater","ru":"Холодная"},"1":{"en":"HotWater","ru":"Горячая"}},"order":55,"readonly":false,"title":{"en":"Настройка: подключение воды"},"type":"value"}
+/devices/dishwasher/controls/set_hotwater/meta/type value
+/devices/dishwasher/controls/set_hotwater/meta/order 55
+/devices/dishwasher/controls/set_hotwater/meta/readonly 0
+/devices/dishwasher/controls/set_infolight 1
+/devices/dishwasher/controls/set_infolight/meta {"order":56,"readonly":false,"title":{"en":"Настройка: InfoLight (луч на полу)"},"type":"switch"}
+/devices/dishwasher/controls/set_infolight/meta/type switch
+/devices/dishwasher/controls/set_infolight/meta/order 56
+/devices/dishwasher/controls/set_infolight/meta/readonly 0
+/devices/dishwasher/controls/set_remotelevel 2
+/devices/dishwasher/controls/set_remotelevel/meta {"enum":{"0":{"en":"Monitoring","ru":"Только мониторинг"},"1":{"en":"ManualRemoteStart","ru":"Старт по кнопке на машине"},"2":{"en":"PermanentRemoteStart","ru":"Постоянный удалённый старт"}},"order":57,"readonly":false,"title":{"en":"Настройка: удалённое управление"},"type":"value"}
+/devices/dishwasher/controls/set_remotelevel/meta/order 57
+/devices/dishwasher/controls/set_remotelevel/meta/readonly 0
+/devices/dishwasher/controls/set_remotelevel/meta/type value
+/devices/dishwasher/controls/set_rinseaid 5
+/devices/dishwasher/controls/set_rinseaid/meta {"enum":{"0":{"en":"Off","ru":"Выкл"},"1":{"en":"R01","ru":"1"},"2":{"en":"R02","ru":"2"},"3":{"en":"R03","ru":"3"},"4":{"en":"R04","ru":"4"},"5":{"en":"R05","ru":"5"},"6":{"en":"R06","ru":"6"}},"order":58,"readonly":false,"title":{"en":"Настройка: дозировка ополаскивателя"},"type":"value"}
+/devices/dishwasher/controls/set_rinseaid/meta/type value
+/devices/dishwasher/controls/set_rinseaid/meta/order 58
+/devices/dishwasher/controls/set_rinseaid/meta/readonly 0
+/devices/dishwasher/controls/set_silencetime 30
+/devices/dishwasher/controls/set_silencetime/meta {"max":30,"min":1,"order":59,"readonly":false,"title":{"en":"Настройка: длительность тихого режима"},"type":"range"}
+/devices/dishwasher/controls/set_silencetime/meta/type range
+/devices/dishwasher/controls/set_silencetime/meta/max 30
+/devices/dishwasher/controls/set_silencetime/meta/min 1
+/devices/dishwasher/controls/set_silencetime/meta/order 59
+/devices/dishwasher/controls/set_silencetime/meta/readonly 0
+/devices/dishwasher/controls/set_sound 3
+/devices/dishwasher/controls/set_sound/meta {"enum":{"0":{"en":"Off","ru":"Выкл"},"1":{"en":"Low","ru":"Тихо"},"2":{"en":"Medium","ru":"Средне"},"3":{"en":"High","ru":"Громко"}},"order":60,"readonly":false,"title":{"en":"Настройка: громкость сигнала"},"type":"value"}
+/devices/dishwasher/controls/set_sound/meta/readonly 0
+/devices/dishwasher/controls/set_sound/meta/type value
+/devices/dishwasher/controls/set_sound/meta/order 60
+/devices/dishwasher/controls/set_turbidity 2
+/devices/dishwasher/controls/set_turbidity/meta {"enum":{"0":{"en":"Standard","ru":"Стандарт"},"1":{"en":"Sensitive","ru":"Чувствительный"},"2":{"en":"VerySensitive","ru":"Очень чувствительный"}},"order":61,"readonly":false,"title":{"en":"Настройка: датчик загрязнения"},"type":"value"}
+/devices/dishwasher/controls/set_turbidity/meta/type value
+/devices/dishwasher/controls/set_turbidity/meta/order 61
+/devices/dishwasher/controls/set_turbidity/meta/readonly 0
+/devices/dishwasher/controls/silence_left 0
+/devices/dishwasher/controls/silence_left/meta {"order":62,"readonly":true,"title":{"en":"Тихий режим: осталось"},"type":"value","units":"min"}
+/devices/dishwasher/controls/silence_left/meta/type value
+/devices/dishwasher/controls/silence_left/meta/order 62
+/devices/dishwasher/controls/silence_left/meta/readonly 1
+/devices/dishwasher/controls/start/meta {"order":63,"readonly":false,"title":{"en":"▶ Старт"},"type":"pushbutton"}
+/devices/dishwasher/controls/start/meta/type pushbutton
+/devices/dishwasher/controls/start/meta/order 63
+/devices/dishwasher/controls/start/meta/readonly 0
+/devices/dishwasher/controls/start_in/meta {"order":64,"readonly":true,"title":{"en":"Старт через"},"type":"text"}
+/devices/dishwasher/controls/start_in/meta/type text
+/devices/dishwasher/controls/start_in/meta/order 64
+/devices/dishwasher/controls/start_in/meta/readonly 1
+/devices/dishwasher/controls/state Мойка
+/devices/dishwasher/controls/state/meta {"order":65,"readonly":true,"title":{"en":"Состояние"},"type":"text"}
+/devices/dishwasher/controls/state/meta/type text
+/devices/dishwasher/controls/state/meta/order 65
+/devices/dishwasher/controls/state/meta/readonly 1
+/devices/dishwasher/controls/water_forecast 61
+/devices/dishwasher/controls/water_forecast/meta {"order":66,"readonly":true,"title":{"en":"Прогноз расхода воды"},"type":"value","units":"%"}
+/devices/dishwasher/controls/water_forecast/meta/order 66
+/devices/dishwasher/controls/water_forecast/meta/readonly 1
+/devices/dishwasher/controls/water_forecast/meta/type value
