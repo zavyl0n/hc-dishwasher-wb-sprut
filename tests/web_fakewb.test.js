@@ -196,7 +196,10 @@ describe("fake-wb и страница через настоящий mosquitto", 
   it("публикует устройство как контроллер: страница видит выключенную машину", { skip: SKIP }, async function () {
     await fakeWb("dw_a", ["--scenario", "idle"]);
     const s = await page("dw_a");
-    await waitFor("все значения", function () { return s.has("fw") && s.raw("fw") !== undefined; });
+    await waitFor("все значения", function () {
+      return s.controls.size >= 66 && s.raw("fw") !== undefined && s.raw("program") !== undefined &&
+        s.meta("delay_h").max !== undefined && s.options("program").length >= 8 && s.log.length >= 1;
+    });
     assert.equal(s.controls.size, 66);
     assert.equal(s.deviceTitle, "Посудомоечная машина");
     assert.equal(s.type("state"), "text");
@@ -230,7 +233,9 @@ describe("fake-wb и страница через настоящий mosquitto", 
     assert.equal(Model.derive(s, false).selected.title, "Быстрая 65°");
 
     assert.equal(s.press("start"), true);
-    await waitFor("мойка началась", function () { return mode() === "running"; });
+    await waitFor("мойка началась", function () {
+      return mode() === "running" && s.text("active_program") !== "" && /^▶/.test(s.log[0].text);
+    });
     assert.equal(s.text("active_program"), "Быстрая 65°");
     assert.match(s.log[0].text, /^▶ Мойка началась: Быстрая 65°, окончание ≈ \d\d:\d\d/);
     assert.equal(s.log[0].live, true);
@@ -238,11 +243,17 @@ describe("fake-wb и страница через настоящий mosquitto", 
     // запись в контрол только для чтения контроллер не слушает, выключение во время мойки — отклоняет
     s.set("state", "Готова");
     s.set("power", false);
-    await waitFor("отказ в выключении", function () { return /Выключение отменено/.test(s.text("last_message")); });
+    await waitFor("отказ в выключении", function () {
+      return /Выключение отменено/.test(s.text("last_message")) && s.pending("power") === undefined;
+    });
     assert.equal(s.bool("power"), true);
     assert.equal(s.text("state"), "Мойка");
 
-    await waitFor("мойка завершена", function () { return mode() === "finished"; }, 20000);
+    // итог приходит несколькими сообщениями (state, finished, progress, last_message) — ждём все
+    await waitFor("мойка завершена", function () {
+      return mode() === "finished" && s.bool("finished") && s.num("progress") === 100 &&
+        /^✅ Мойка завершена/.test(s.log[0].text);
+    }, 20000);
     const v = Model.derive(s, false);
     assert.equal(v.dial.value, "Чисто");
     assert.equal(v.unloadPending, true);
@@ -256,7 +267,7 @@ describe("fake-wb и страница через настоящий mosquitto", 
     wb.stdin.write("door 1\n");
     await waitFor("дверь открыта", function () { return s.bool("door_open"); });
     wb.stdin.write("flag salt_empty 1\nonline 0\n");
-    await waitFor("нет связи с машиной", function () { return s.has("online") && !s.bool("online") && s.bool("salt_empty"); });
+    await waitFor("нет связи с машиной", function () { return s.has("online") && !s.bool("online") && s.bool("salt_empty") && s.num("salt_level") === 0; });
     assert.equal(Model.derive(s, false).link, "machine");
     assert.equal(s.num("salt_level"), 0);
     wb.stdin.write("online 1\ndoor 0\nчто-то не то\n");
@@ -298,7 +309,7 @@ describe("fake-wb и страница через настоящий mosquitto", 
       return (wb.out.match(/опубликовано \d+ retained-сообщений/g) || []).length >= 2;
     }, 10000);
     const s = await page("dw_e");
-    await waitFor("значения", function () { return s.text("state") === "Выключена" && s.raw("fw") !== undefined; });
+    await waitFor("значения", function () { return s.text("state") === "Выключена" && s.raw("fw") !== undefined && s.controls.size >= 66; });
     assert.equal(s.controls.size, 66);
   });
 });
