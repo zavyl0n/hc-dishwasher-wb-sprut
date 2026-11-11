@@ -21,14 +21,18 @@ jobs:
           python-version: "3.13"
       - name: Зависимости
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mosquitto   # брокер для tests/web_broker.test.js
           npm install --no-audit --no-fund
           python -m pip install --require-hashes -r hcpy_wb7/requirements-wb7.txt
-      - name: Правило wb-rules (эмулятор)
+      - name: Правило wb-rules (эмулятор) и веб-страница
+        env:
+          REQUIRE_BROKER: "1"   # без mosquitto тест обмена с брокером должен упасть, а не пропуститься
         run: node --test tests/*.test.js
       - name: Генератор, hc_check, стык с hcpy
         run: python -m unittest discover -s tests -v
       - name: Установщик (shellcheck)
-        run: shellcheck hcpy_wb7/install_hcpy.sh
+        run: shellcheck hcpy_wb7/install_hcpy.sh web/install_web.sh
 
   # правило в настоящем Duktape — движке wb-rules (ES5)
   duktape:

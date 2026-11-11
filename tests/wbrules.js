@@ -70,11 +70,12 @@ function load(rulePath, opts) {
   let timerId = 0;
   const cells = {};      // "dishwasher/power" -> значение
   const defs = {};       // описание контролов
+  const devices = {};    // "dishwasher" -> { title } виртуального устройства
   const rules = [];
   const trackers = [];
   const queue = [];
   const e = {
-    cells, defs, rules,
+    cells, defs, devices, rules,
     sent: [],            // [topic, payload] — что правило опубликовало в MQTT
     logs: [],            // ["info", "..."]
     telegram: [],        // тексты, ушедшие в Telegram
@@ -138,6 +139,7 @@ function load(rulePath, opts) {
     },
     publish: function (topic, payload) { e.sent.push([topic, String(payload)]); },
     defineVirtualDevice: function (id, d) {
+      devices[id] = { title: d.title };
       Object.keys(d.cells).forEach(function (c) {
         const def = d.cells[c];
         defs[id + "/" + c] = def;
